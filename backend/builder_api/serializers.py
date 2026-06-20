@@ -23,14 +23,11 @@ class RegisterSerializer(serializers.ModelSerializer):
         return user
 
 class PageSerializer(serializers.ModelSerializer):
-    # جعل حقل الموقع للقراءة فقط، لكي لا يطالبك الفرونت إند بإرساله في كل عملية حفظ وتحديث
-    site = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = Page
         fields = ('id', 'site', 'title', 'slug', 'layout', 'meta_title', 'meta_description', 'created_at', 'updated_at')
-        read_only_fields = ('id', 'created_at', 'updated_at')
-        
+        read_only_fields = ('id', 'created_at', 'updated_at')        
         
         
 class SiteSerializer(serializers.ModelSerializer):

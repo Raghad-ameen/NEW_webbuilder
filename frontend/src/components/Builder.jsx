@@ -24,7 +24,6 @@ function Builder() {
   };
   const [selectedColumnId, setSelectedColumnId] = useState(null);
 
-  // Lasso selection states
   const [lassoStart, setLassoStart] = useState(null);
   const [lassoEnd, setLassoEnd] = useState(null);
   const [isLassoing, setIsLassoing] = useState(false);
@@ -45,6 +44,9 @@ function Builder() {
   const [showNewPageModal, setShowNewPageModal] = useState(false);
   const [newPageTitle, setNewPageTitle] = useState('');
   const [newPageSlug, setNewPageSlug] = useState('');
+
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+const [pageToDelete, setPageToDelete] = useState(null);
 
   
 const fetchData = async () => {
@@ -87,23 +89,29 @@ if (siteData && siteData.is_active === false) {
         setPages(sitePages);
         
         const home = sitePages.find(p => p.slug === 'home') || sitePages[0];
-        if (home) {
-          setActivePage(home);
-          setActiveLayout(home.layout || []);
-          setHistory([JSON.stringify(home.layout || [])]);
-          setHistoryPointer(0);
-        }
+       if (home) {
+  setActivePage(home);
+  setActiveLayout(home.layout || []);
+  setHistory([JSON.stringify(home.layout || [])]);
+  setHistoryPointer(0);
+} else {
+  setActivePage(null);
+  setActiveLayout([]);
+  setHistory([]);
+  setHistoryPointer(-1);
+}
       }
     } catch (err) {
       console.error('Error fetching builder details:', err);
     }
   };
 
-  useEffect(() => {
-    if (siteId) {
-      fetchData();
-    }
-  }, [siteId]);
+useEffect(() => {
+  if (siteId) {
+    fetchData();
+  }
+}, [siteId, pages]); 
+
 
 const saveLayout = async () => {
   if (!activePage) {
@@ -1046,14 +1054,20 @@ const saveLayout = async () => {
     }
   };
 
-  const handleCreatePage = async (e) => {
+const handleCreatePage = async (e) => {
     e.preventDefault();
+    console.log("Current siteId is:", siteId, "Type:", typeof siteId);
     if (!newPageTitle || !newPageSlug) return;
     
     try {
+      const token = localStorage.getItem('access_token'); 
+
       const res = await fetch('/api/pages/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : '' 
+        },
         body: JSON.stringify({
           site: parseInt(siteId),
           title: newPageTitle,
@@ -1081,6 +1095,7 @@ const saveLayout = async () => {
           ]
         })
       });
+
       if (res.ok) {
         const pageData = await res.json();
         setPages([...pages, pageData]);
@@ -1090,13 +1105,68 @@ const saveLayout = async () => {
         setNewPageSlug('');
         setShowNewPageModal(false);
       } else {
-        alert('Slug is already in use on this website.');
+        if (res.status === 401) {
+          alert('Unauthorized: Please ensure you are logged in.');
+        } else if (res.status === 400) {
+          alert('Slug is already in use on this website or the data is invalid.');
+        } else {
+          alert(`An unexpected error occurred: ${res.status}`);
+        }
       }
     } catch (err) {
       console.error(err);
+      alert('Failed to connect to the server.');
     }
   };
 
+const handleDeleteClick = (pageId, e) => {
+  e.stopPropagation(); 
+  setPageToDelete(pageId);
+  setIsDeleteModalOpen(true);
+};
+
+const confirmDeletePage = async () => {
+  if (!pageToDelete) return;
+
+  try {
+    const token = localStorage.getItem('access_token');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`http://127.0.0.1:8000/api/pages/${pageToDelete}/`, {
+      method: 'DELETE',
+      headers: headers,
+    });
+
+if (response.ok) {
+  setPages(prevPages => prevPages.filter(p => p.id !== pageToDelete));
+
+  setActivePage(null);
+  setActiveLayout([]);
+
+  window.location.reload(); 
+}
+    
+    else {
+      const errorData = await response.json();
+      console.error('Deletion failed:', errorData);
+      alert('Failed to delete the page. Server returned an error.');
+    }
+  } catch (err) {
+    console.error('Connection error:', err);
+    alert('A network error occurred. Please check your connection.');
+  } finally {
+    setIsDeleteModalOpen(false);
+    setPageToDelete(null);
+  }
+};
+
+const cancelDelete = () => {
+  setIsDeleteModalOpen(false);
+  setPageToDelete(null);
+};
   const handleSwitchPage = (page) => {
     setActivePage(page);
     setActiveLayout(page.layout || []);
@@ -1610,82 +1680,54 @@ const renderCanvasElement = (el) => {
                 </div>
               )}
 
-              {activeLeftTab === 'pages' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', height: '100%' }}>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <h3 style={{ fontSize: '15px', fontWeight: 'bold' }}>Website Pages</h3>
-                      <button onClick={() => setShowNewPageModal(true)} className="btn-secondary" style={{ padding: '4px 8px', fontSize: '11px' }}>
-                        + Add Page
-                      </button>
-                    </div>
+{pages.map(p => (
+  <div 
+    key={p.id}
+    onClick={() => handleSwitchPage(p)}
+    style={{
+      padding: '10px 12px',
+      borderRadius: '6px',
+      cursor: 'pointer',
+      fontSize: '13px',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center', 
+      background: activePage?.id === p.id ? 'var(--primary)' : 'rgba(255,255,255,0.02)',
+      color: activePage?.id === p.id ? '#fff' : 'var(--text-primary)',
+      fontWeight: activePage?.id === p.id ? 'bold' : 'normal'
+    }}
+  >
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <span>📄 {p.title}</span>
+    </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                      {pages.map(p => (
-                        <div 
-                          key={p.id}
-                          onClick={() => handleSwitchPage(p)}
-                          style={{
-                            padding: '10px 12px',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            fontSize: '13px',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            background: activePage.id === p.id ? 'var(--primary)' : 'rgba(255,255,255,0.02)',
-                            color: activePage.id === p.id ? '#fff' : 'var(--text-primary)',
-                            fontWeight: activePage.id === p.id ? 'bold' : 'normal'
-                          }}
-                        >
-                          <span>📄 {p.title}</span>
-                          <span style={{ fontSize: '11px', opacity: 0.7 }}>/{p.slug}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: '15px' }}>
-                    <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '12px' }}>Page SEO Settings</h3>
-                    <div style={{ marginBottom: '12px' }}>
-                      <label>Meta Header Title</label>
-                      <input 
-                        type="text" 
-                        value={activePage.meta_title || ''} 
-                        onChange={async (e) => {
-                          const val = e.target.value;
-                          setActivePage({ ...activePage, meta_title: val });
-                          setPages(pages.map(p => p.id === activePage.id ? { ...p, meta_title: val } : p));
-                          await fetch(`/api/pages/${activePage.id}/`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ meta_title: val })
-                          });
-                        }}
-                        placeholder="Page Title SEO"
-                      />
-                    </div>
-                    <div>
-                      <label>Meta Description</label>
-                      <textarea 
-                        rows="3" 
-                        value={activePage.meta_description || ''} 
-                        onChange={async (e) => {
-                          const val = e.target.value;
-                          setActivePage({ ...activePage, meta_description: val });
-                          setPages(pages.map(p => p.id === activePage.id ? { ...p, meta_description: val } : p));
-                          await fetch(`/api/pages/${activePage.id}/`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ meta_description: val })
-                          });
-                        }}
-                        placeholder="Search engine page snippet summary..."
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <span style={{ fontSize: '11px', opacity: 0.7 }}>/{p.slug}</span>
+      
+      <button 
+        onClick={(e) => handleDeleteClick(p.id, e)}
+        title="Delete Page"
+        style={{
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          padding: '2px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#ef4444', 
+        }}
+      >
+      
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 6h18"></path>
+          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+        </svg>
+      </button>
+    </div>
+  </div>
+))}
               {activeLeftTab === 'theme' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                   <h3 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '5px' }}>Global Styles</h3>
@@ -1887,126 +1929,67 @@ const renderCanvasElement = (el) => {
               </nav>
             )}
 
-            {activeLayout.length === 0 ? (
-              <div style={{ padding: '80px 20px', textAlign: 'center', color: '#64748b' }}>
-                <Sparkles size={36} style={{ marginBottom: '12px', color: 'var(--primary)' }} />
-                <h4 style={{ fontWeight: 'bold', marginBottom: '8px' }}>Empty Canvas</h4>
-                <p style={{ fontSize: '13px', maxWidth: '300px', margin: '0 auto 20px' }}>
-                  Your site has no sections. Click below to add a column layout to begin!
-                </p>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
-                  <button onClick={() => handleAddSection(1)} className="btn-primary" style={{ padding: '6px 12px', fontSize: '12px' }}>1 Column</button>
-                  <button onClick={() => handleAddSection(2)} className="btn-primary" style={{ padding: '6px 12px', fontSize: '12px' }}>2 Columns</button>
-                </div>
+<div className="builder-canvas-wrapper" style={{ flex: 1, overflowY: 'auto', width: '100%', height: '100%' }}>
+  {activePage && activeLayout ? (
+    activeLayout.length === 0 ? (
+      <div style={{ padding: '80px 20px', textAlign: 'center', color: '#64748b', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+        <Sparkles size={48} style={{ marginBottom: '16px', color: 'var(--primary)' }} />
+        <h4 style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '20px' }}>Empty Canvas</h4>
+        <p style={{ fontSize: '14px', maxWidth: '300px', margin: '0 auto 24px' }}>
+          Your site has no sections. Click below to add a column layout to begin!
+        </p>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={() => handleAddSection(1)} className="btn-primary" style={{ padding: '10px 20px', cursor: 'pointer' }}>+ 1 Column</button>
+          <button onClick={() => handleAddSection(2)} className="btn-primary" style={{ padding: '10px 20px', cursor: 'pointer' }}>+ 2 Columns</button>
+        </div>
+      </div>
+    ) : (
+      activeLayout.map((sec, secIdx) => {
+        const secStyles = renderInlineStyles(sec.settings);
+        const containerWidth = sec.settings?.containerWidth || '1200px';
+
+        return (
+          <section key={sec.id} style={{ position: 'relative', width: '100%', ...secStyles }} className={isPreview ? '' : 'builder-canvas-section'}>
+            {!isPreview && (
+              <div style={{ position: 'absolute', top: '4px', left: '4px', zIndex: 40, display: 'flex', gap: '4px', background: 'rgba(15,23,42,0.85)', padding: '3px', borderRadius: '4px' }}>
+                <span style={{ fontSize: '10px', color: '#fff', padding: '2px 4px', background: 'var(--primary)', borderRadius: '2px', fontWeight: 'bold' }}>Section</span>
+                <button onClick={(e) => { e.stopPropagation(); handleDeleteSection(sec.id); }} style={{ padding: '2px', background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }} title="Delete Section"><Trash2 size={11} /></button>
               </div>
-            ) : (
-              activeLayout.map((sec, secIdx) => {
-                const secStyles = renderInlineStyles(sec.settings);
-                const containerWidth = sec.settings?.containerWidth || '1200px';
-
-                return (
-                  <section 
-                    key={sec.id} 
-                    style={{ position: 'relative', width: '100%', ...secStyles }}
-                    className={isPreview ? '' : 'builder-canvas-section'}
-                  >
-                    {!isPreview && (
-                      <div style={{
-                        position: 'absolute',
-                        top: '4px',
-                        left: '4px',
-                        zIndex: 40,
-                        display: 'flex',
-                        gap: '4px',
-                        background: 'rgba(15,23,42,0.85)',
-                        padding: '3px',
-                        borderRadius: '4px'
-                      }}>
-                        <span style={{ fontSize: '10px', color: '#fff', padding: '2px 4px', background: 'var(--primary)', borderRadius: '2px', fontWeight: 'bold' }}>Section</span>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleDeleteSection(sec.id); }} 
-                          style={{ padding: '2px', background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}
-                          title="Delete Section"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      </div>
-                    )}
-
-                    <div style={{ maxWidth: containerWidth, margin: '0 auto', padding: '0 20px', boxSizing: 'border-box' }}>
-                      {(sec.rows || []).map((row, rowIdx) => {
-                        const rowStyles = renderInlineStyles(row.settings);
-                        
-                        return (
-                          <div 
-                            key={row.id} 
-                            style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', marginBottom: '20px', ...rowStyles }}
-                            className={isPreview ? '' : 'builder-canvas-row'}
-                          >
-                            {(row.columns || []).map((col, colIdx) => {
-                              const colStyles = renderInlineStyles(col.settings);
-                              const colWidth = col.settings?.width || '12';
-                              
-                              const widthMap = {
-                                '12': '100%',
-                                '6': 'calc(50% - 10px)',
-                                '4': 'calc(33.33% - 13.33px)',
-                                '3': 'calc(25% - 15px)',
-                                '8': 'calc(66.66% - 6.66px)',
-                                '9': 'calc(75% - 5px)',
-                              };
-                              const computedWidth = widthMap[colWidth] || '100%';
-                              
-                              const isColSelected = selectedColumnId === col.id;
-                              
-                              const handleColClick = (e) => {
-                                if (isPreview) return;
-                                e.stopPropagation();
-                                setSelectedColumnId(col.id);
-                                setSelectedElementId(null);
-                              };
-
-                              return (
-                                <div 
-                                  key={col.id}
-                                  onClick={handleColClick}
-                                  style={{
-                                    flex: `0 0 ${computedWidth}`,
-                                    width: computedWidth,
-                                    minWidth: '280px',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '15px',
-                                    border: (!isPreview && isColSelected) ? '1px dashed var(--primary)' : '1px dashed transparent',
-                                    backgroundColor: (!isPreview && isColSelected) ? 'rgba(99, 102, 241, 0.02)' : 'transparent',
-                                    borderRadius: '4px',
-                                    padding: '8px',
-                                    transition: 'border 0.2s',
-                                    position: 'relative',
-                                    minHeight: isPreview ? '400px' : '450px',
-                                    ...colStyles
-                                  }}
-                                >
-                                  {(col.elements || []).map(el => renderCanvasElement(el))}
-                                  
-                                  {!isPreview && (col.elements || []).length === 0 && (
-                                    <div style={{ padding: '15px', textHeight: '50px', border: '1px dashed rgba(255,255,255,0.06)', borderRadius: '4px', textAlign: 'center', color: '#64748b', fontSize: '11px' }}>
-                                      Column empty. Select column & click elements sidebar to add content.
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </section>
-                );
-              })
             )}
+            <div style={{ maxWidth: containerWidth, margin: '0 auto', padding: '0 20px', boxSizing: 'border-box' }}>
+              {(sec.rows || []).map((row) => (
+                <div key={row.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', marginBottom: '20px', ...renderInlineStyles(row.settings) }} className={isPreview ? '' : 'builder-canvas-row'}>
+                  {(row.columns || []).map((col) => {
+                    const computedWidth = { '12': '100%', '6': 'calc(50% - 10px)', '4': 'calc(33.33% - 13.33px)', '3': 'calc(25% - 15px)', '8': 'calc(66.66% - 6.66px)', '9': 'calc(75% - 5px)' }[col.settings?.width || '12'] || '100%';
+                    return (
+                      <div key={col.id} onClick={(e) => { if (!isPreview) { e.stopPropagation(); setSelectedColumnId(col.id); } }} style={{ flex: `0 0 ${computedWidth}`, width: computedWidth, minWidth: '280px', display: 'flex', flexDirection: 'column', gap: '15px', border: (!isPreview && selectedColumnId === col.id) ? '1px dashed var(--primary)' : '1px dashed transparent', padding: '8px', position: 'relative', minHeight: '450px', ...renderInlineStyles(col.settings) }}>
+                        {(col.elements || []).map(el => renderCanvasElement(el))}
+                        {!isPreview && (col.elements || []).length === 0 && <div style={{ padding: '15px', border: '1px dashed rgba(255,255,255,0.06)', borderRadius: '4px', textAlign: 'center', color: '#64748b', fontSize: '11px' }}>Column empty.</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      })
+    )
+  ) : (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#fff', textAlign: 'center' }}>
+      <p>No page selected. Please select or create a new page.</p>
+      <button onClick={() => setShowNewPageModal(true)} style={{ marginTop: '15px', padding: '10px 20px', cursor: 'pointer', background: 'var(--primary)', border: 'none', color: 'white', borderRadius: '5px' }}>
+        + Add New Page
+      </button>
+    </div>
+  )}
+</div>
+
+
+
 
           </div>
+          
           {isLassoing && lassoStart && lassoEnd && (
             <div style={{
               position: 'absolute',
@@ -2671,6 +2654,50 @@ const renderCanvasElement = (el) => {
   </div>
 )}
 
+
+{isDeleteModalOpen && (
+  <div className="modal-overlay" style={{
+    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+    backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', 
+    alignItems: 'center', justifyContent: 'center', zIndex: 9999
+  }}>
+    <div className="modal-content" style={{
+      backgroundColor: '#1E2128',
+      padding: '24px', borderRadius: '8px', width: '400px',
+      color: 'white', boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
+    }}>
+      <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 'bold' }}>
+        Delete Page
+      </h3>
+      <p style={{ marginBottom: '24px', color: '#A0AABF', fontSize: '14px' }}>
+        Are you sure you want to delete this page? This action cannot be undone.
+      </p>
+      
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+        <button 
+          onClick={cancelDelete}
+          style={{
+            padding: '8px 16px', borderRadius: '6px', cursor: 'pointer',
+            backgroundColor: 'transparent', border: '1px solid #4B5563', color: 'white'
+          }}
+        >
+          Cancel
+        </button>
+        <button 
+          onClick={confirmDeletePage}
+          style={{
+            padding: '8px 16px', borderRadius: '6px', cursor: 'pointer',
+            backgroundColor: '#EF4444', border: 'none', color: 'white', fontWeight: 'bold'
+          }}
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+
       {activeFormEl && (
         <div style={{
           position: 'fixed',
@@ -2758,6 +2785,6 @@ const renderCanvasElement = (el) => {
 
     </div>
   );
-}
+   }
 
 export default Builder;
