@@ -3,15 +3,15 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Laptop, Tablet, Smartphone, Eye, EyeOff, Save, Check, Globe,
   Type, Image as ImageIcon, Video, Square, Play, Plus, Trash2, ArrowUp, ArrowDown,
-  Copy, Settings, Palette, FileCode, Layers, CheckCircle, RefreshCw, Sparkles,Mail
+  Copy, Settings, Palette, FileCode, Layers, CheckCircle, RefreshCw, Sparkles, Mail
 } from 'lucide-react';
 import { TEMPLATES } from '../utils/TemplateData';
 import { Rnd } from 'react-rnd';
+import JSZip from 'jszip';
 
 function Builder() {
   const { siteId } = useParams();
   const navigate = useNavigate();
-
   const [site, setSite] = useState(null);
   const [pages, setPages] = useState([]);
   const [activePage, setActivePage] = useState(null);
@@ -23,7 +23,6 @@ function Builder() {
     setSelectedElementIds(id ? [id] : []);
   };
   const [selectedColumnId, setSelectedColumnId] = useState(null);
-
   const [lassoStart, setLassoStart] = useState(null);
   const [lassoEnd, setLassoEnd] = useState(null);
   const [isLassoing, setIsLassoing] = useState(false);
@@ -36,50 +35,48 @@ function Builder() {
   const [isSaving, setIsSaving] = useState(false);
   const [activeFormEl, setActiveFormEl] = useState(null);
   const viewportRef = useRef(null);
-
   
   const [history, setHistory] = useState([]);
   const [historyPointer, setHistoryPointer] = useState(-1);
-
   const [showNewPageModal, setShowNewPageModal] = useState(false);
   const [newPageTitle, setNewPageTitle] = useState('');
   const [newPageSlug, setNewPageSlug] = useState('');
-
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-const [pageToDelete, setPageToDelete] = useState(null);
+  const [pageToDelete, setPageToDelete] = useState(null);
 
-  
-const fetchData = async () => {
+  const [renamingPageId, setRenamingPageId] = useState(null);
+  const [renamePageValue, setRenamePageValue] = useState('');
+
+  const [inlineEditingId, setInlineEditingId] = useState(null);
+  const inlineEditRef = useRef(null);
+
+  const fetchData = async () => {
     try {
       const token = localStorage.getItem('access_token'); 
-
       const headers = {
         'Content-Type': 'application/json',
       };
-
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
       const siteRes = await fetch(`http://127.0.0.1:8000/api/sites/${siteId}/`, { headers });
       
-     if (siteRes.status === 403) {
-  navigate('/', { state: { showSuspendedModal: true } });
-  return;
-}
+      if (siteRes.status === 403) {
+        navigate('/', { state: { showSuspendedModal: true } });
+        return;
+      }
 
-if (!siteRes.ok) {
-  navigate('/');
-  return;
-}
+      if (!siteRes.ok) {
+        navigate('/');
+        return;
+      }
 
-const siteData = await siteRes.json();
-
-if (siteData && siteData.is_active === false) {
-  navigate('/', { state: { showSuspendedModal: true } });
-  return;
-}
-
+      const siteData = await siteRes.json();
+      if (siteData && siteData.is_active === false) {
+        navigate('/', { state: { showSuspendedModal: true } });
+        return;
+      }
       setSite(siteData);
       
       const pagesRes = await fetch(`http://127.0.0.1:8000/api/pages/?site_id=${siteId}`, { headers });
@@ -89,72 +86,73 @@ if (siteData && siteData.is_active === false) {
         setPages(sitePages);
         
         const home = sitePages.find(p => p.slug === 'home') || sitePages[0];
-       if (home) {
-  setActivePage(home);
-  setActiveLayout(home.layout || []);
-  setHistory([JSON.stringify(home.layout || [])]);
-  setHistoryPointer(0);
-} else {
-  setActivePage(null);
-  setActiveLayout([]);
-  setHistory([]);
-  setHistoryPointer(-1);
-}
+        if (home) {
+          setActivePage(home);
+          setActiveLayout(home.layout || []);
+          setHistory([JSON.stringify(home.layout || [])]);
+          setHistoryPointer(0);
+        } else {
+          setActivePage(null);
+          setActiveLayout([]);
+          setHistory([]);
+          setHistoryPointer(-1);
+        }
       }
     } catch (err) {
       console.error('Error fetching builder details:', err);
     }
   };
 
-useEffect(() => {
-  if (siteId) {
-    fetchData();
-  }
-}, [siteId, pages]); 
-
-
-const saveLayout = async () => {
-  if (!activePage) {
-    alert("No active page found to save.");
-    return;
-  }
-  setIsSaving(true);
-  
-  try {
-    const token = localStorage.getItem('access_token');
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+  useEffect(() => {
+    if (siteId) {
+      fetchData();
     }
+  }, [siteId]);  
 
-    const response = await fetch(`http://127.0.0.1:8000/api/pages/${activePage.id}/`, {
-      method: 'PUT',
-      headers: headers,
-      body: JSON.stringify({
-        site: parseInt(siteId),
-        title: activePage.title,
-        slug: activePage.slug,
-        layout: activeLayout
-      })
-    });
-
-    if (response.ok) {
-      setIsSaving(false);
-      setIsSaveModalOpen(true);
-    } else {
-      setIsSaving(false);
-      const errorData = await response.json();
-      console.error('Save failed:', errorData);
-      alert('Failed to save layout. Server returned an error.');
+  const saveLayout = async () => {
+    if (!activePage) {
+      alert("No active page found to save.");
+      return;
     }
-  } catch (err) {
-    setIsSaving(false);
-    console.error('Error saving layout:', err);
-    alert('An error occurred while saving.');
-  }
-};
+    setIsSaving(true);
+    
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`http://127.0.0.1:8000/api/pages/${activePage.id}/`, {
+        method: 'PUT',
+        headers: headers,
+        body: JSON.stringify({
+          site: parseInt(siteId),
+          title: activePage.title,
+          slug: activePage.slug,
+          layout: activeLayout,
+          meta_title: activePage.meta_title || '',
+          meta_description: activePage.meta_description || ''
+        })
+      });
+
+      if (response.ok) {
+        setIsSaving(false);
+        setIsSaveModalOpen(true);
+      } else {
+        setIsSaving(false);
+        const errorData = await response.json();
+        console.error('Save failed:', errorData);
+        alert('Failed to save layout. Server returned an error.');
+      }
+    } catch (err) {
+      setIsSaving(false);
+      console.error('Error saving layout:', err);
+      alert('An error occurred while saving.');
+    }
+  };
 
   const handleMouseDown = (e) => {
     if (isPreview) return;
@@ -220,10 +218,21 @@ const saveLayout = async () => {
     setLassoEnd(null);
   };
 
-  const compileToStaticHtml = () => {
-    const fontFamily = site.theme?.fontFamily || 'Inter, sans-serif';
+  const compileToStaticHtml = (page = activePage, currentSite = site, allPages = pages) => {
+    if (!page) return '';
+    const fontFamily = currentSite.theme?.fontFamily || 'Inter, sans-serif';
     const fontName = fontFamily.split(',')[0].replace(/['"]/g, '');
     const fontImport = `@import url('https://fonts.googleapis.com/css2?family=${fontName.replace(/\s+/g, '+')}:wght@300;400;600;800&display=swap');`;
+
+    let pageBgColor = currentSite.theme?.backgroundColor || '#ffffff';
+    try {
+      if (page.meta_description && page.meta_description.startsWith('{')) {
+        const settings = JSON.parse(page.meta_description);
+        if (settings.useGlobalBackground === false) {
+          pageBgColor = settings.backgroundColor || '#ffffff';
+        }
+      }
+    } catch (e) {}
 
     const animationKeyframes = `
       @keyframes fadeIn {
@@ -256,13 +265,43 @@ const saveLayout = async () => {
       }
     `;
 
+    // Generate Hover Styles CSS for static build
+    let hoverStylesCss = '';
+    const targetLayout = page.layout || [];
+    targetLayout.forEach(sec => {
+      sec.rows?.forEach(row => {
+        row.columns?.forEach(col => {
+          col.elements?.forEach(el => {
+            if (el.hoverStyles) {
+              let hoverRules = '';
+              if (el.hoverStyles.backgroundColor) hoverRules += `background-color: ${el.hoverStyles.backgroundColor} !important; `;
+              if (el.hoverStyles.color) hoverRules += `color: ${el.hoverStyles.color} !important; `;
+              if (el.hoverStyles.opacity) hoverRules += `opacity: ${el.hoverStyles.opacity} !important; `;
+              if (el.hoverStyles.transform) hoverRules += `transform: ${el.hoverStyles.transform} !important; `;
+              
+              if (hoverRules) {
+                hoverStylesCss += `
+                  [data-element-id="${el.id}"] {
+                    transition: all ${el.hoverStyles.transitionSpeed || '0.2'}s ease-in-out !important;
+                  }
+                  [data-element-id="${el.id}"]:hover {
+                    ${hoverRules}
+                  }
+                `;
+              }
+            }
+          });
+        });
+      });
+    });
+
     let styles = `
       ${fontImport}
       
       :root {
-        --primary: ${site.theme?.primaryColor || '#6366f1'};
-        --bg-color: ${site.theme?.backgroundColor || '#ffffff'};
-        --text-color: ${site.theme?.textColor || '#333333'};
+        --primary: ${currentSite.theme?.primaryColor || '#6366f1'};
+        --bg-color: ${pageBgColor};
+        --text-color: ${currentSite.theme?.textColor || '#333333'};
         --font-family: ${fontFamily};
       }
 
@@ -428,17 +467,18 @@ const saveLayout = async () => {
       }
 
       ${animationKeyframes}
-      ${site.custom_css || ''}
+      ${hoverStylesCss}
+      ${currentSite.custom_css || ''}
     `;
 
     let navHtml = '';
-    if (pages.length > 1) {
+    if (allPages.length > 1) {
       navHtml = `
         <nav style="display: flex; justify-content: space-between; align-items: center; padding: 15px 30px; border-bottom: 1px solid rgba(0,0,0,0.06); background: rgba(0,0,0,0.01);">
-          <span style="font-weight: bold; color: var(--primary);">${site.name}</span>
+          <span style="font-weight: bold; color: var(--primary);">${currentSite.name}</span>
           <div style="display: flex; gap: 20px; font-size: 14px;">
-            ${pages.map(p => `
-              <a href="${p.slug === 'home' ? 'index.html' : `${p.slug}.html`}" style="text-decoration: none; color: inherit; font-weight: ${activePage.id === p.id ? 'bold' : 'normal'}; border-bottom: ${activePage.id === p.id ? '2px solid var(--primary)' : 'none'}; padding-bottom: 2px;">
+            ${allPages.map(p => `
+              <a href="${p.slug === 'home' ? 'index.html' : `${p.slug}.html`}" style="text-decoration: none; color: inherit; font-weight: ${page.id === p.id ? 'bold' : 'normal'}; border-bottom: ${page.id === p.id ? '2px solid var(--primary)' : 'none'}; padding-bottom: 2px;">
                 ${p.title}
               </a>
             `).join('')}
@@ -448,7 +488,7 @@ const saveLayout = async () => {
     }
 
     let bodyHtml = '';
-    activeLayout.forEach(sec => {
+    targetLayout.forEach(sec => {
       let secStyles = '';
       if (sec.settings) {
         Object.keys(sec.settings).forEach(k => {
@@ -521,7 +561,11 @@ const saveLayout = async () => {
             } else if (el.type === 'text') {
               innerMarkup = `<div style="font-size: inherit; color: inherit;">${(el.content?.text || 'Paragraph text').replace(/\n/g, '<br>')}</div>`;
             } else if (el.type === 'button') {
-              innerMarkup = `<button class="site-builder-btn" style="width: 100%; height: 100%; border: none; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; padding: 0; border-radius: inherit;">${el.content?.text || 'Button'}</button>`;
+              if (el.action && el.action.type === 'submit_inputs') {
+                innerMarkup = `<button class="site-builder-btn" onclick="submitInputs(event, '${el.action.value || ''}')" style="width: 100%; height: 100%; border: none; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; padding: 0; border-radius: inherit;">${el.content?.text || 'Submit'}</button>`;
+              } else {
+                innerMarkup = `<button class="site-builder-btn" style="width: 100%; height: 100%; border: none; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; padding: 0; border-radius: inherit;">${el.content?.text || 'Button'}</button>`;
+              }
             } else if (el.type === 'image') {
               innerMarkup = `<img src="${el.content?.src}" alt="${el.content?.alt || 'Graphic'}" style="width: 100%; height: 100%; display: block; border-radius: inherit;" />`;
             } else if (el.type === 'video') {
@@ -545,28 +589,48 @@ const saveLayout = async () => {
             } else if (el.type === 'spacer') {
               innerMarkup = `<div style="height: 100%;"></div>`;
             } else if (el.type === 'form') {
-              const btnBg = el.styles?.backgroundColor || '#6366f1';
-              const btnColor = el.styles?.color || '#ffffff';
-              const btnRadius = el.styles?.borderRadius || '4px';
+              const formBg = el.styles?.backgroundColor || '#1e293b';
+              const formTextColor = el.styles?.color || '#ffffff';
+              const formPadding = el.styles?.padding || '20';
+              const formRadius = el.styles?.borderRadius || '8';
+              const btnBg = el.styles?.buttonBgColor || '#6366f1';
+              const btnColor = el.styles?.buttonTextColor || '#ffffff';
+              
+              const fields = el.content?.fields || [
+                { id: 'field_name', type: 'text', label: 'Name', required: true, placeholder: 'Sender Name' },
+                { id: 'field_email', type: 'email', label: 'Email Address', required: true, placeholder: 'Sender Email' },
+                { id: 'field_message', type: 'textarea', label: 'Message', required: true, placeholder: 'Message content...' }
+              ];
 
               innerMarkup = `
-                <form class="platform-contact-form" onsubmit="submitContactForm(event)">
-                  <div class="form-group">
-                    <label>Name</label>
-                    <input type="text" name="name" required />
-                  </div>
-                  <div class="form-group">
-                    <label>Email Address</label>
-                    <input type="email" name="email" required />
-                  </div>
-                  <div class="form-group">
-                    <label>Message</label>
-                    <textarea name="message" required rows="3"></textarea>
-                  </div>
-                  <button type="submit" class="form-submit-btn" style="background-color: ${btnBg}; color: ${btnColor}; border-radius: ${btnRadius}px;">
-                    Send Message
+                <form class="platform-contact-form" onsubmit="submitContactForm(event)" style="background: ${formBg}; color: ${formTextColor}; padding: ${formPadding}px; border-radius: ${formRadius}px;">
+                  ${fields.map(field => `
+                    <div class="form-group">
+                      <label>${field.label}</label>
+                      ${field.type === 'textarea' ? `
+                        <textarea name="${field.id}" ${field.required ? 'required' : ''} placeholder="${field.placeholder || ''}" rows="3"></textarea>
+                      ` : `
+                        <input type="${field.type}" name="${field.id}" ${field.required ? 'required' : ''} placeholder="${field.placeholder || ''}" />
+                      `}
+                    </div>
+                  `).join('')}
+                  <button type="submit" class="form-submit-btn" style="background-color: ${btnBg}; color: ${btnColor}; border-radius: 4px;">
+                    ${el.content?.buttonText || 'Send Message'}
                   </button>
                 </form>
+              `;
+            } else if (el.type === 'input') {
+              innerMarkup = `
+                <div style="display: flex; flex-direction: column; gap: 5px; width: 100%;">
+                  <label style="font-size: 12px; font-weight: bold;">${el.content?.label || 'Input Label'}</label>
+                  <input 
+                    type="${el.content?.inputType || 'text'}" 
+                    placeholder="${el.content?.placeholder || ''}" 
+                    name="${el.content?.name || el.id}"
+                    ${el.content?.required ? 'required' : ''}
+                    style="padding: 8px 12px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1); background: rgba(0,0,0,0.02); color: inherit; width: 100%; font-size: 14px;" 
+                  />
+                </div>
               `;
             }
 
@@ -593,7 +657,7 @@ const saveLayout = async () => {
             }
 
             bodyHtml += `
-              <div class="element-wrapper" style="${elStyles}">
+              <div class="element-wrapper" data-element-id="${el.id}" style="${elStyles}">
                 ${wrapStart}
                 ${innerMarkup}
                 ${wrapEnd}
@@ -623,8 +687,8 @@ const saveLayout = async () => {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${activePage.meta_title || site.name}</title>
-        <meta name="description" content="${activePage.meta_description || ''}">
+        <title>${page.meta_title || currentSite.name}</title>
+        <meta name="description" content="${page.meta_description || ''}">
         <style>
           ${styles}
         </style>
@@ -693,40 +757,74 @@ const saveLayout = async () => {
               alert('Network error. Please try again.');
             }
           }
+
+          async function submitInputs(event, endpointUrl) {
+            event.preventDefault();
+            const data = {};
+            const inputs = document.querySelectorAll('input, textarea, select');
+            inputs.forEach(input => {
+              if (input.name) {
+                if (input.type === 'checkbox') {
+                  data[input.name] = input.checked;
+                } else {
+                  data[input.name] = input.value;
+                }
+              }
+            });
+            const targetUrl = endpointUrl || 'http://localhost:8001/api/sites/${siteId}/submit-data/';
+            try {
+              const response = await fetch(targetUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+              });
+              if (response.ok) {
+                alert('Data submitted successfully!');
+                inputs.forEach(input => {
+                  if (input.type === 'checkbox') input.checked = false;
+                  else input.value = '';
+                });
+              } else {
+                alert('Failed to submit form.');
+              }
+            } catch (error) {
+              console.error(error);
+              alert('Network error.');
+            }
+          }
         </script>
       </body>
       </html>
     `;
   };
 
-  const exportProjectToDevice = () => {
-    if (!site || !activePage) return;
+  const exportProjectToDevice = async () => {
+    try {
+      const zip = new JSZip();
+      zip.file(`${site.subdomain || 'website'}_backup.json`, JSON.stringify({ site, pages, exportedAt: new Date().toISOString() }, null, 2));
 
-    const projectBackup = {
-      site,
-      pages,
-      exportedAt: new Date().toISOString()
-    };
-    const jsonBlob = new Blob([JSON.stringify(projectBackup, null, 2)], { type: 'application/json' });
-    const jsonUrl = URL.createObjectURL(jsonBlob);
-    const jsonLink = document.createElement('a');
-    jsonLink.href = jsonUrl;
-    jsonLink.download = `${site.subdomain || 'website'}_backup.json`;
-    document.body.appendChild(jsonLink);
-    jsonLink.click();
-    document.body.removeChild(jsonLink);
-    URL.revokeObjectURL(jsonUrl);
+      for (const page of pages) {
+        const pageHtml = compileToStaticHtml(page, site, pages); 
+        const fileName = page.slug === 'home' ? 'index.html' : `${page.slug || 'page'}.html`;
+        zip.file(fileName, pageHtml);
+      }
 
-    const compiledHtml = compileToStaticHtml();
-    const htmlBlob = new Blob([compiledHtml], { type: 'text/html' });
-    const htmlUrl = URL.createObjectURL(htmlBlob);
-    const htmlLink = document.createElement('a');
-    htmlLink.href = htmlUrl;
-    htmlLink.download = `${activePage.slug || 'index'}.html`;
-    document.body.appendChild(htmlLink);
-    htmlLink.click();
-    document.body.removeChild(htmlLink);
-    URL.revokeObjectURL(htmlUrl);
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${site.subdomain || 'website'}_full_export.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+    } catch (error) {
+      console.error("Export failed:", error);
+      alert('حدث خطأ أثناء التصدير');
+    }
   };
 
   const updateLayout = (newLayout, pushToHistory = true) => {
@@ -737,7 +835,6 @@ const saveLayout = async () => {
       setHistory(newHistory);
       setHistoryPointer(newHistory.length - 1);
     }
-    
     savePageLayout(newLayout);
   };
 
@@ -753,7 +850,10 @@ const saveLayout = async () => {
         await fetch(`/api/pages/${activePage.id}/`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ layout: layoutData })
+          body: JSON.stringify({ 
+            layout: layoutData,
+            meta_description: activePage.meta_description || ''
+          })
         });
       } catch (err) {
         console.error('Autosave page failed:', err);
@@ -813,7 +913,8 @@ const saveLayout = async () => {
                 content: { ...el.content, ...updates.content },
                 styles: { ...el.styles, ...updates.styles },
                 animation: { ...el.animation, ...updates.animation },
-                action: { ...el.action, ...updates.action }
+                action: { ...el.action, ...updates.action },
+                hoverStyles: { ...el.hoverStyles, ...updates.hoverStyles }
               };
             }
             return el;
@@ -936,8 +1037,19 @@ const saveLayout = async () => {
       },
       form: {
         type: 'form',
-        content: {},
+        content: {
+          fields: [
+            { id: 'field_name', type: 'text', label: 'Name', required: true, placeholder: 'Sender Name' },
+            { id: 'field_email', type: 'email', label: 'Email Address', required: true, placeholder: 'Sender Email' },
+            { id: 'field_message', type: 'textarea', label: 'Message', required: true, placeholder: 'Message content...' }
+          ]
+        },
         styles: { padding: '20', backgroundColor: '#1e293b', borderRadius: '8' }
+      },
+      input: {
+        type: 'input',
+        content: { label: 'Form Input', placeholder: 'Enter details...', inputType: 'text', name: 'input_field', required: false },
+        styles: { color: '#ffffff', marginBottom: '15' }
       }
     };
 
@@ -976,6 +1088,97 @@ const saveLayout = async () => {
         columns: (row.columns || []).map(col => {
           if ((selectedColumnId && col.id === selectedColumnId) || (!selectedColumnId && !added)) {
             added = true;
+            return {
+              ...col,
+              elements: [...(col.elements || []), newEl]
+            };
+          }
+          return col;
+        })
+      }))
+    }));
+
+    updateLayout(nextLayout);
+    setSelectedElementId(newEl.id);
+  };
+
+  const handleDropElement = (e, columnId) => {
+    const type = e.dataTransfer.getData("elementType");
+    if (!type) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const defaultElements = {
+      heading: {
+        type: 'heading',
+        content: { tag: 'h2', text: 'New Heading Segment' },
+        styles: { fontSize: '32', color: '#ffffff', marginBottom: '15' }
+      },
+      text: {
+        type: 'text',
+        content: { text: 'Write your rich paragraph details here. Click style settings to configure background, padding, and size.' },
+        styles: { fontSize: '15', color: '#cbd5e1', marginBottom: '15', lineHeight: '1.6' }
+      },
+      button: {
+        type: 'button',
+        content: { text: 'Click Action', link: '#' },
+        styles: { backgroundColor: '#6366f1', color: '#ffffff', padding: '10 20', borderRadius: '6', fontWeight: 'bold' }
+      },
+      image: {
+        type: 'image',
+        content: { src: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80', alt: 'Visual Graphic' },
+        styles: { borderRadius: '6', marginBottom: '15' }
+      },
+      video: {
+        type: 'video',
+        content: { src: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
+        styles: { marginBottom: '15' }
+      },
+      divider: {
+        type: 'divider',
+        content: {},
+        styles: { height: '1', backgroundColor: '#e2e8f0', marginTop: '15', marginBottom: '15' }
+      },
+      spacer: {
+        type: 'spacer',
+        content: {},
+        styles: { height: '30' }
+      },
+      form: {
+        type: 'form',
+        content: {
+          fields: [
+            { id: 'field_name', type: 'text', label: 'Name', required: true, placeholder: 'Sender Name' },
+            { id: 'field_email', type: 'email', label: 'Email Address', required: true, placeholder: 'Sender Email' },
+            { id: 'field_message', type: 'textarea', label: 'Message', required: true, placeholder: 'Message content...' }
+          ]
+        },
+        styles: { padding: '20', backgroundColor: '#1e293b', borderRadius: '8' }
+      },
+      input: {
+        type: 'input',
+        content: { label: 'Form Input', placeholder: 'Enter details...', inputType: 'text', name: 'input_field', required: false },
+        styles: { color: '#ffffff', marginBottom: '15' }
+      }
+    };
+
+    const newEl = {
+      id: `el_${Date.now()}`,
+      x: Math.max(0, x - 100),
+      y: Math.max(0, y - 20),
+      width: 250,
+      height: type === 'form' ? 320 : type === 'text' ? 80 : 50,
+      ...defaultElements[type]
+    };
+
+    const nextLayout = activeLayout.map(sec => ({
+      ...sec,
+      rows: (sec.rows || []).map(row => ({
+        ...row,
+        columns: (row.columns || []).map(col => {
+          if (col.id === columnId) {
             return {
               ...col,
               elements: [...(col.elements || []), newEl]
@@ -1054,14 +1257,12 @@ const saveLayout = async () => {
     }
   };
 
-const handleCreatePage = async (e) => {
+  const handleCreatePage = async (e) => {
     e.preventDefault();
-    console.log("Current siteId is:", siteId, "Type:", typeof siteId);
     if (!newPageTitle || !newPageSlug) return;
     
     try {
       const token = localStorage.getItem('access_token'); 
-
       const res = await fetch('/api/pages/', {
         method: 'POST',
         headers: { 
@@ -1119,54 +1320,88 @@ const handleCreatePage = async (e) => {
     }
   };
 
-const handleDeleteClick = (pageId, e) => {
-  e.stopPropagation(); 
-  setPageToDelete(pageId);
-  setIsDeleteModalOpen(true);
-};
+  const handleDeleteClick = (pageId, e) => {
+    e.stopPropagation(); 
+    setPageToDelete(pageId);
+    setIsDeleteModalOpen(true);
+  };
 
-const confirmDeletePage = async () => {
-  if (!pageToDelete) return;
+  const confirmDeletePage = async () => {
+    if (!pageToDelete) return;
 
-  try {
-    const token = localStorage.getItem('access_token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`http://127.0.0.1:8000/api/pages/${pageToDelete}/`, {
+        method: 'DELETE',
+        headers: headers,
+      });
+
+      if (response.ok) {
+        const remaining = pages.filter(p => p.id !== pageToDelete);
+        setPages(remaining);
+
+        if (activePage?.id === pageToDelete) {
+          if (remaining.length > 0) {
+            const nextPage = remaining[0];
+            setActivePage(nextPage);
+            setActiveLayout(nextPage.layout || []);
+            setHistory([JSON.stringify(nextPage.layout || [])]);
+            setHistoryPointer(0);
+          } else {
+            setActivePage(null);
+            setActiveLayout([]);
+            setHistory([]);
+            setHistoryPointer(-1);
+          }
+        }
+      } else {
+        const errorData = await response.json();
+        console.error('Deletion failed:', errorData);
+        alert('Failed to delete the page. Server returned an error.');
+      }
+    } catch (err) {
+      console.error('Connection error:', err);
+      alert('A network error occurred. Please check your connection.');
+    } finally {
+      setIsDeleteModalOpen(false);
+      setPageToDelete(null);
     }
+  };
 
-    const response = await fetch(`http://127.0.0.1:8000/api/pages/${pageToDelete}/`, {
-      method: 'DELETE',
-      headers: headers,
-    });
+  const handleCommitRename = async (pageId) => {
+    const trimmed = renamePageValue.trim();
+    if (!trimmed) { setRenamingPageId(null); return; }
+    const target = pages.find(p => p.id === pageId);
+    if (!target) { setRenamingPageId(null); return; }
 
-if (response.ok) {
-  setPages(prevPages => prevPages.filter(p => p.id !== pageToDelete));
+    try {
+      const token = localStorage.getItem('access_token');
+      const res = await fetch(`http://127.0.0.1:8000/api/pages/${pageId}/`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ title: trimmed })
+      });
+      if (res.ok) {
+        setPages(prev => prev.map(p => p.id === pageId ? { ...p, title: trimmed } : p));
+        if (activePage?.id === pageId) setActivePage(prev => ({ ...prev, title: trimmed }));
+      }
+    } catch (err) { console.error('Rename failed:', err); }
+    setRenamingPageId(null);
+  };
 
-  setActivePage(null);
-  setActiveLayout([]);
-
-  window.location.reload(); 
-}
-    
-    else {
-      const errorData = await response.json();
-      console.error('Deletion failed:', errorData);
-      alert('Failed to delete the page. Server returned an error.');
-    }
-  } catch (err) {
-    console.error('Connection error:', err);
-    alert('A network error occurred. Please check your connection.');
-  } finally {
+  const cancelDelete = () => {
     setIsDeleteModalOpen(false);
     setPageToDelete(null);
-  }
-};
+  };
 
-const cancelDelete = () => {
-  setIsDeleteModalOpen(false);
-  setPageToDelete(null);
-};
   const handleSwitchPage = (page) => {
     setActivePage(page);
     setActiveLayout(page.layout || []);
@@ -1216,9 +1451,53 @@ const cancelDelete = () => {
     return styles;
   };
 
-const renderCanvasElement = (el) => {
+  const getPageBgColor = () => {
+    try {
+      if (activePage?.meta_description && activePage.meta_description.startsWith('{')) {
+        const settings = JSON.parse(activePage.meta_description);
+        if (settings.useGlobalBackground === false) {
+          return settings.backgroundColor || '#ffffff';
+        }
+      }
+    } catch (e) {}
+    return site?.theme?.backgroundColor || '#ffffff';
+  };
+
+  const getHoverStylesCss = () => {
+    let css = '';
+    activeLayout.forEach(sec => {
+      sec.rows?.forEach(row => {
+        row.columns?.forEach(col => {
+          col.elements?.forEach(el => {
+            if (el.hoverStyles) {
+              let hoverRules = '';
+              if (el.hoverStyles.backgroundColor) hoverRules += `background-color: ${el.hoverStyles.backgroundColor} !important; `;
+              if (el.hoverStyles.color) hoverRules += `color: ${el.hoverStyles.color} !important; `;
+              if (el.hoverStyles.opacity) hoverRules += `opacity: ${el.hoverStyles.opacity} !important; `;
+              if (el.hoverStyles.transform) hoverRules += `transform: ${el.hoverStyles.transform} !important; `;
+              
+              if (hoverRules) {
+                css += `
+                  [data-element-id="${el.id}"] {
+                    transition: all ${el.hoverStyles.transitionSpeed || '0.2'}s ease-in-out !important;
+                  }
+                  [data-element-id="${el.id}"]:hover {
+                    ${hoverRules}
+                  }
+                `;
+              }
+            }
+          });
+        });
+      });
+    });
+    return css;
+  };
+
+  const renderCanvasElement = (el) => {
     const isSelected = selectedElementIds.includes(el.id);
     const styles = renderInlineStyles(el.styles);
+    const isInlineEditing = inlineEditingId === el.id;
 
     const overlayControls = !isPreview && (
       <div className="element-overlay-controls">
@@ -1234,6 +1513,19 @@ const renderCanvasElement = (el) => {
       e.stopPropagation();
       setSelectedElementId(el.id);
       setSelectedColumnId(null);
+    };
+
+    const handleElDoubleClick = (e) => {
+      if (isPreview) return;
+      if (!['heading', 'text', 'button'].includes(el.type)) return;
+      e.stopPropagation();
+      setInlineEditingId(el.id);
+      setTimeout(() => { if (inlineEditRef.current) inlineEditRef.current.focus(); }, 50);
+    };
+
+    const commitInlineEdit = (newText) => {
+      updateSelectedElement({ content: { text: newText } });
+      setInlineEditingId(null);
     };
 
     const getAnimationStyles = (el) => {
@@ -1292,7 +1584,7 @@ const renderCanvasElement = (el) => {
     const wrapWithRnd = (elementInnerContent, inlineStyles = {}) => {
       return (
         <Rnd
-          key={el.id}
+          key={`${el.id}_${isPreview}`}
           size={{ 
             width: el.width || '100%', 
             height: el.height || 'auto' 
@@ -1348,13 +1640,14 @@ const renderCanvasElement = (el) => {
             updateLayout(nextLayout);
           }}
           onClick={handleElClick}
-          className={`builder-canvas-element ${isSelected ? 'selected' : ''}`}
+          onDoubleClick={handleElDoubleClick}
+          className={`builder-canvas-element ${isSelected && !isPreview ? 'selected' : ''}`}
           data-element-id={el.id}
           style={{
             position: 'absolute',
             display: 'inline-block',
             zIndex: isSelected ? 50 : 10,
-            border: isSelected && !isPreview ? '2px solid #6366f1' : 'none',
+            border: isSelected && !isPreview ? '2px dashed #6366f1' : 'none',
             ...inlineStyles,
             ...getAnimationStyles(el)
           }}
@@ -1367,16 +1660,63 @@ const renderCanvasElement = (el) => {
 
     if (el.type === 'heading') {
       const Tag = el.content?.tag || 'h2';
+      if (isInlineEditing) {
+        return wrapWithRnd(
+          <Tag style={styles}>
+            <span
+              ref={inlineEditRef}
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(e) => commitInlineEdit(e.target.innerText)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } if (e.key === 'Escape') { setInlineEditingId(null); } }}
+              style={{ outline: 'none', display: 'block', minWidth: '60px' }}
+            >
+              {el.content?.text || 'Heading'}
+            </span>
+          </Tag>
+        );
+      }
       return wrapWithRnd(<Tag style={styles}>{el.content?.text || 'Heading'}</Tag>);
     }
 
     if (el.type === 'text') {
+      if (isInlineEditing) {
+        return wrapWithRnd(
+          <div
+            ref={inlineEditRef}
+            contentEditable
+            suppressContentEditableWarning
+            onBlur={(e) => commitInlineEdit(e.target.innerText)}
+            onKeyDown={(e) => { if (e.key === 'Escape') { setInlineEditingId(null); } }}
+            style={{ ...styles, outline: 'none', minHeight: '1em', whiteSpace: 'pre-wrap' }}
+          >
+            {el.content?.text || 'Paragraph text'}
+          </div>
+        );
+      }
       return wrapWithRnd(
         <div style={styles} dangerouslySetInnerHTML={{ __html: (el.content?.text || 'Paragraph text').replace(/\n/g, '<br>') }} />
       );
     }
 
     if (el.type === 'button') {
+      if (isInlineEditing) {
+        return wrapWithRnd(
+          <button className="site-builder-btn" style={{ border: 'none', cursor: 'pointer', ...styles }}>
+            <span
+              ref={inlineEditRef}
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(e) => commitInlineEdit(e.target.innerText)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } if (e.key === 'Escape') { setInlineEditingId(null); } }}
+              style={{ outline: 'none' }}
+            >
+              {el.content?.text || 'Click Action'}
+            </span>
+          </button>,
+          { display: 'inline-block' }
+        );
+      }
       return wrapWithRnd(
         <button className="site-builder-btn" style={{ border: 'none', cursor: 'pointer', ...styles }}>
           {el.content?.text || 'Click Action'}
@@ -1439,50 +1779,83 @@ const renderCanvasElement = (el) => {
     }
 
     if (el.type === 'form') {
-      const btnBg = el.styles?.backgroundColor || '#6366f1';
-      const btnColor = el.styles?.color || '#ffffff';
-      const btnRadius = el.styles?.borderRadius || '4px';
+      const formBg = el.styles?.backgroundColor || '#1e293b';
+      const formTextColor = el.styles?.color || '#ffffff';
+      const formPadding = el.styles?.padding || '20';
+      const formRadius = el.styles?.borderRadius || '8';
+      const btnBg = el.styles?.buttonBgColor || '#6366f1';
+      const btnColor = el.styles?.buttonTextColor || '#ffffff';
+
+      const fields = el.content?.fields || [
+        { id: 'field_name', type: 'text', label: 'Name', required: true, placeholder: 'Sender Name' },
+        { id: 'field_email', type: 'email', label: 'Email Address', required: true, placeholder: 'Sender Email' },
+        { id: 'field_message', type: 'textarea', label: 'Message', required: true, placeholder: 'Message content...' }
+      ];
 
       return wrapWithRnd(
         <div style={{
           width: '100%',
-          padding: '20px',
-          background: 'rgba(255,255,255,0.02)',
+          padding: `${formPadding}px`,
+          background: formBg,
+          color: formTextColor,
+          borderRadius: `${formRadius}px`,
           border: '1px solid rgba(255,255,255,0.05)',
-          borderRadius: '8px',
           ...styles
         }}>
-          <div style={{ marginBottom: '12px' }}>
-            <label style={{ fontSize: '12px', color: site?.theme?.textColor || '#cbd5e1' }}>Name</label>
-            <input type="text" disabled placeholder="Sender Name" style={{ background: 'rgba(255,255,255,0.05)', cursor: 'not-allowed', width: '100%' }} />
-          </div>
-          <div style={{ marginBottom: '12px' }}>
-            <label style={{ fontSize: '12px', color: site?.theme?.textColor || '#cbd5e1' }}>Email Address</label>
-            <input type="email" disabled placeholder="Sender Email" style={{ background: 'rgba(255,255,255,0.05)', cursor: 'not-allowed', width: '100%' }} />
-          </div>
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ fontSize: '12px', color: site?.theme?.textColor || '#cbd5e1' }}>Message</label>
-            <textarea disabled rows="3" placeholder="Message content..." style={{ background: 'rgba(255,255,255,0.05)', cursor: 'not-allowed', width: '100%' }}></textarea>
-          </div>
+          {fields.map(field => (
+            <div key={field.id} style={{ marginBottom: '12px' }}>
+              <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>{field.label}</label>
+              {field.type === 'textarea' ? (
+                <textarea disabled rows="3" placeholder={field.placeholder} style={{ background: 'rgba(255,255,255,0.05)', cursor: 'not-allowed', width: '100%', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', color: 'inherit', padding: '8px' }}></textarea>
+              ) : (
+                <input type={field.type} disabled placeholder={field.placeholder} style={{ background: 'rgba(255,255,255,0.05)', cursor: 'not-allowed', width: '100%', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', color: 'inherit', padding: '8px' }} />
+              )}
+            </div>
+          ))}
           <button type="button" style={{
             backgroundColor: btnBg,
             color: btnColor,
-            borderRadius: btnRadius,
+            borderRadius: '4px',
             border: 'none',
             padding: '10px 18px',
             fontWeight: 'bold',
             cursor: 'not-allowed',
             width: '100%'
           }}>
-            Send Message (Disabled in editor)
+            {el.content?.buttonText || 'Send Message'} (Disabled in editor)
           </button>
+        </div>
+      );
+    }
+
+    if (el.type === 'input') {
+      return wrapWithRnd(
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', width: '100%', ...styles }}>
+          <label style={{ fontSize: '12px', fontWeight: 'bold' }}>{el.content?.label || 'Input Label'}</label>
+          <input 
+            type={el.content?.inputType || 'text'} 
+            placeholder={el.content?.placeholder} 
+            name={el.content?.name || el.id}
+            required={el.content?.required}
+            disabled={!isPreview}
+            style={{ 
+              padding: '8px 12px', 
+              borderRadius: '4px', 
+              border: '1px solid rgba(255,255,255,0.1)', 
+              background: 'rgba(255,255,255,0.05)', 
+              color: 'inherit',
+              width: '100%',
+              fontSize: '14px'
+            }} 
+          />
         </div>
       );
     }
 
     return null;
   };
-  if (!site || !activePage) {
+
+  if (!site) {
     return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: '#fff' }}>Loading builder workspace...</div>;
   }
 
@@ -1491,6 +1864,76 @@ const renderCanvasElement = (el) => {
     if (viewMode === 'tablet') return '768px';
     return '100%';
   };
+
+  if (!activePage) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#090d16' }}>
+        <header className="glass" style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '12px 30px', borderBottom: '1px solid var(--border)', height: '65px', zIndex: 200
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <button onClick={() => navigate('/')} className="btn-secondary" style={{ padding: '8px 12px' }}>
+              <ArrowLeft size={16} /> Back
+            </button>
+            <h2 style={{ fontSize: '15px', fontWeight: 'bold' }}>{site.name}</h2>
+          </div>
+        </header>
+        <div style={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
+          <aside className="glass" style={{ width: '300px', display: 'flex', borderRight: '1px solid var(--border)', flexShrink: 0, alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '12px', color: 'var(--text-secondary)', fontSize: '13px' }}>
+            <Layers size={28} />
+            <p>No pages yet</p>
+            <button onClick={() => setShowNewPageModal(true)} className="btn-primary" style={{ padding: '8px 16px' }}>
+              + Add First Page
+            </button>
+          </aside>
+          <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '20px', color: 'var(--text-secondary)' }}>
+            <div style={{ fontSize: '80px', lineHeight: 1 }}>+</div>
+            <h3 style={{ fontSize: '22px', fontWeight: 'bold', color: '#fff' }}>No pages yet</h3>
+            <p style={{ fontSize: '14px', maxWidth: '300px', textAlign: 'center' }}>Your project has no pages. Create your first page to start building!</p>
+            <button onClick={() => setShowNewPageModal(true)} className="btn-primary" style={{ padding: '12px 28px', fontSize: '15px' }}>
+              + Create First Page
+            </button>
+          </div>
+          <aside className="glass" style={{ width: '320px', borderLeft: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
+              <Settings size={28} style={{ marginBottom: '8px' }} />
+              <p>Select an element to inspect</p>
+            </div>
+          </aside>
+        </div>
+        {showNewPageModal && (
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(15,23,42,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div className="glass" style={{ width: '400px', padding: '30px', borderRadius: 'var(--radius-lg)' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '15px' }}>Add Site Page</h3>
+              <form onSubmit={handleCreatePage}>
+                <div style={{ marginBottom: '15px' }}>
+                  <label>Page Title</label>
+                  <input type="text" required value={newPageTitle} onChange={(e) => { setNewPageTitle(e.target.value); if (!newPageSlug) setNewPageSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '')); }} placeholder="e.g. Home" />
+                </div>
+                <div style={{ marginBottom: '25px' }}>
+                  <label>URL Slug Path</label>
+                  <input type="text" required value={newPageSlug} onChange={(e) => setNewPageSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))} placeholder="e.g. home" />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                  <button type="button" onClick={() => setShowNewPageModal(false)} className="btn-secondary">Cancel</button>
+                  <button type="submit" className="btn-primary">Add Page</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Parse page specific background settings from activePage.meta_description
+  let pageBgSettings = { backgroundColor: '#ffffff', useGlobalBackground: true };
+  try {
+    if (activePage?.meta_description && activePage.meta_description.startsWith('{')) {
+      pageBgSettings = JSON.parse(activePage.meta_description);
+    }
+  } catch(e) {}
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#090d16' }}>
@@ -1567,16 +2010,25 @@ const renderCanvasElement = (el) => {
             onClick={exportProjectToDevice}
             className="btn-secondary" 
             style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-            title="Download compiled HTML and JSON backup"
+            title="Download project as ZIP archive"
           >
-            Export Page
+            ⬇ Export ZIP
           </button>
 
-          <button onClick={() => setIsPreview(!isPreview)} className="btn-secondary" style={{ padding: '8px 14px' }}>
+          <button 
+            onClick={() => {
+              setIsPreview(!isPreview);
+              if (!isPreview) {
+                setSelectedElementIds([]);
+                setSelectedColumnId(null);
+              }
+            }} 
+            className="btn-secondary" 
+            style={{ padding: '8px 14px' }}
+          >
             {isPreview ? <><EyeOff size={15} /> Edit Workspace</> : <><Eye size={15} /> Live Preview</>}
           </button>
          
-
           {site.is_published ? (
             <div style={{ display: 'flex', gap: '4px' }}>
               <button onClick={() => handlePublishToggle(false)} className="btn-secondary" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>
@@ -1634,33 +2086,88 @@ const renderCanvasElement = (el) => {
               {activeLeftTab === 'elements' && (
                 <div>
                   <h3 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '4px' }}>Add Elements</h3>
-                  <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-                    Click an element to add it to your active column.
-                  </p>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '25px' }}>
-                    <button onClick={() => handleAddElement('heading')} className="btn-secondary" style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px' }}>
+                  <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>💡 Drag and drop blocks directly into any canvas column, or click to auto-add.</p>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '25px', marginTop: '10px' }}>
+                    <button 
+                      draggable 
+                      onDragStart={(e) => e.dataTransfer.setData("elementType", "heading")}
+                      onClick={() => handleAddElement('heading')} 
+                      className="btn-secondary" 
+                      style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab' }}
+                    >
                       <Type size={18} /> Heading
                     </button>
-                    <button onClick={() => handleAddElement('text')} className="btn-secondary" style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px' }}>
+                    <button 
+                      draggable 
+                      onDragStart={(e) => e.dataTransfer.setData("elementType", "text")}
+                      onClick={() => handleAddElement('text')} 
+                      className="btn-secondary" 
+                      style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab' }}
+                    >
                       <Plus size={18} /> Text
                     </button>
-                    <button onClick={() => handleAddElement('button')} className="btn-secondary" style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px' }}>
+                    <button 
+                      draggable 
+                      onDragStart={(e) => e.dataTransfer.setData("elementType", "button")}
+                      onClick={() => handleAddElement('button')} 
+                      className="btn-secondary" 
+                      style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab' }}
+                    >
                       <Square size={18} /> Button
                     </button>
-                    <button onClick={() => handleAddElement('image')} className="btn-secondary" style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px' }}>
+                    <button 
+                      draggable 
+                      onDragStart={(e) => e.dataTransfer.setData("elementType", "image")}
+                      onClick={() => handleAddElement('image')} 
+                      className="btn-secondary" 
+                      style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab' }}
+                    >
                       <ImageIcon size={18} /> Image
                     </button>
-                    <button onClick={() => handleAddElement('video')} className="btn-secondary" style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px' }}>
+                    <button 
+                      draggable 
+                      onDragStart={(e) => e.dataTransfer.setData("elementType", "video")}
+                      onClick={() => handleAddElement('video')} 
+                      className="btn-secondary" 
+                      style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab' }}
+                    >
                       <Video size={18} /> YouTube
                     </button>
-                    <button onClick={() => handleAddElement('form')} className="btn-secondary" style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px' }}>
+                    <button 
+                      draggable 
+                      onDragStart={(e) => e.dataTransfer.setData("elementType", "form")}
+                      onClick={() => handleAddElement('form')} 
+                      className="btn-secondary" 
+                      style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab' }}
+                    >
                       <Mail size={18} /> Contact Form
                     </button>
-                    <button onClick={() => handleAddElement('divider')} className="btn-secondary" style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px' }}>
+                    <button 
+                      draggable 
+                      onDragStart={(e) => e.dataTransfer.setData("elementType", "input")}
+                      onClick={() => handleAddElement('input')} 
+                      className="btn-secondary" 
+                      style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab' }}
+                    >
+                      <Type size={16} style={{ color: 'var(--accent)' }} /> Input Field
+                    </button>
+                    <button 
+                      draggable 
+                      onDragStart={(e) => e.dataTransfer.setData("elementType", "divider")}
+                      onClick={() => handleAddElement('divider')} 
+                      className="btn-secondary" 
+                      style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab' }}
+                    >
                       <Square size={10} /> Divider
                     </button>
-                    <button onClick={() => handleAddElement('spacer')} className="btn-secondary" style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px' }}>
+                    <button 
+                      draggable 
+                      onDragStart={(e) => e.dataTransfer.setData("elementType", "spacer")}
+                      onClick={() => handleAddElement('spacer')} 
+                      className="btn-secondary" 
+                      style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab' }}
+                    >
                       <Plus size={10} /> Spacer
                     </button>
                   </div>
@@ -1680,54 +2187,99 @@ const renderCanvasElement = (el) => {
                 </div>
               )}
 
-{pages.map(p => (
-  <div 
-    key={p.id}
-    onClick={() => handleSwitchPage(p)}
-    style={{
-      padding: '10px 12px',
-      borderRadius: '6px',
-      cursor: 'pointer',
-      fontSize: '13px',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center', 
-      background: activePage?.id === p.id ? 'var(--primary)' : 'rgba(255,255,255,0.02)',
-      color: activePage?.id === p.id ? '#fff' : 'var(--text-primary)',
-      fontWeight: activePage?.id === p.id ? 'bold' : 'normal'
-    }}
-  >
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-      <span>📄 {p.title}</span>
-    </div>
+              {activeLeftTab === 'pages' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <h3 style={{ fontSize: '15px', fontWeight: 'bold' }}>Pages</h3>
+                    <button onClick={() => setShowNewPageModal(true)} className="btn-primary" style={{ padding: '4px 10px', fontSize: '12px' }}>+ Add</button>
+                  </div>
+                  <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px' }}>Double-click a page name to rename it.</p>
+                  {pages.map(p => (
+                    <div
+                      key={p.id}
+                      onClick={() => { if (renamingPageId !== p.id) handleSwitchPage(p); }}
+                      style={{
+                        padding: '10px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        background: activePage?.id === p.id ? 'var(--primary)' : 'rgba(255,255,255,0.02)',
+                        color: activePage?.id === p.id ? '#fff' : 'var(--text-primary)',
+                        fontWeight: activePage?.id === p.id ? 'bold' : 'normal'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexGrow: 1, overflow: 'hidden' }}>
+                        <span>📄</span>
+                        {renamingPageId === p.id ? (
+                          <input
+                            autoFocus
+                            type="text"
+                            value={renamePageValue}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setRenamePageValue(e.target.value)}
+                            onBlur={() => handleCommitRename(p.id)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleCommitRename(p.id); if (e.key === 'Escape') setRenamingPageId(null); }}
+                            style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid var(--primary)', borderRadius: '4px', color: '#fff', padding: '2px 6px', fontSize: '13px', width: '100%' }}
+                          />
+                        ) : (
+                          <span
+                            onDoubleClick={(e) => { e.stopPropagation(); setRenamingPageId(p.id); setRenamePageValue(p.title); }}
+                            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                            title="Double-click to rename"
+                          >
+                            {p.title}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                        <span style={{ fontSize: '10px', opacity: 0.6 }}>/{p.slug}</span>
+                        <button
+                          onClick={(e) => handleDeleteClick(p.id, e)}
+                          title="Delete Page"
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center', color: '#ef4444' }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 6h18"></path>
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
 
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-      <span style={{ fontSize: '11px', opacity: 0.7 }}>/{p.slug}</span>
-      
-      <button 
-        onClick={(e) => handleDeleteClick(p.id, e)}
-        title="Delete Page"
-        style={{
-          background: 'transparent',
-          border: 'none',
-          cursor: 'pointer',
-          padding: '2px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#ef4444', 
-        }}
-      >
-      
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 6h18"></path>
-          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-        </svg>
-      </button>
-    </div>
-  </div>
-))}
+                  {activePage && (
+                    <div style={{ borderTop: '1px solid var(--border)', marginTop: '20px', paddingTop: '15px' }}>
+                      <h4 style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '10px' }}>SEO Details</h4>
+                      <div style={{ marginBottom: '10px' }}>
+                        <label>Meta Title</label>
+                        <input 
+                          type="text" 
+                          value={activePage.meta_title || ''} 
+                          onChange={(e) => {
+                            const updated = { ...activePage, meta_title: e.target.value };
+                            setActivePage(updated);
+                            setPages(pages.map(p => p.id === activePage.id ? updated : p));
+                          }}
+                          placeholder="Search engine title"
+                        />
+                      </div>
+                      <div>
+                        <label>Meta Description</label>
+                        <textarea 
+                          rows="3"
+                          value={activePage.meta_description && activePage.meta_description.startsWith('{') ? '' : (activePage.meta_description || '')} 
+                          onChange={(e) => {
+                            const updated = { ...activePage, meta_description: e.target.value };
+                            setActivePage(updated);
+                            setPages(pages.map(p => p.id === activePage.id ? updated : p));
+                          }}
+                          placeholder="Search engine description preview"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {activeLeftTab === 'theme' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                   <h3 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '5px' }}>Global Styles</h3>
@@ -1773,7 +2325,7 @@ const renderCanvasElement = (el) => {
                   </div>
 
                   <div>
-                    <label>Background Color</label>
+                    <label>Global Background Color</label>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <input 
                         type="color" 
@@ -1816,6 +2368,70 @@ const renderCanvasElement = (el) => {
                         }}
                       />
                     </div>
+                  </div>
+
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: '15px', marginTop: '10px' }}>
+                    <h4 style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>Page Background Settings</h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' }}>
+                        <input 
+                          type="radio" 
+                          name="pageBgType" 
+                          checked={pageBgSettings.useGlobalBackground !== false} 
+                          onChange={() => {
+                            const newSettings = { ...pageBgSettings, useGlobalBackground: true };
+                            const updated = { ...activePage, meta_description: JSON.stringify(newSettings) };
+                            setActivePage(updated);
+                            setPages(pages.map(p => p.id === activePage.id ? updated : p));
+                            savePageLayout(activeLayout);
+                          }}
+                        />
+                        Use Global background color
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' }}>
+                        <input 
+                          type="radio" 
+                          name="pageBgType" 
+                          checked={pageBgSettings.useGlobalBackground === false} 
+                          onChange={() => {
+                            const newSettings = { ...pageBgSettings, useGlobalBackground: false, backgroundColor: pageBgSettings.backgroundColor || '#ffffff' };
+                            const updated = { ...activePage, meta_description: JSON.stringify(newSettings) };
+                            setActivePage(updated);
+                            setPages(pages.map(p => p.id === activePage.id ? updated : p));
+                            savePageLayout(activeLayout);
+                          }}
+                        />
+                        Custom color for this page
+                      </label>
+                    </div>
+
+                    {pageBgSettings.useGlobalBackground === false && (
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                        <input 
+                          type="color" 
+                          value={pageBgSettings.backgroundColor || '#ffffff'} 
+                          onChange={(e) => {
+                            const newSettings = { ...pageBgSettings, backgroundColor: e.target.value };
+                            const updated = { ...activePage, meta_description: JSON.stringify(newSettings) };
+                            setActivePage(updated);
+                            setPages(pages.map(p => p.id === activePage.id ? updated : p));
+                            savePageLayout(activeLayout);
+                          }}
+                          style={{ width: '45px', height: '40px', padding: 0, border: 'none', cursor: 'pointer' }}
+                        />
+                        <input 
+                          type="text" 
+                          value={pageBgSettings.backgroundColor || '#ffffff'} 
+                          onChange={(e) => {
+                            const newSettings = { ...pageBgSettings, backgroundColor: e.target.value };
+                            const updated = { ...activePage, meta_description: JSON.stringify(newSettings) };
+                            setActivePage(updated);
+                            setPages(pages.map(p => p.id === activePage.id ? updated : p));
+                            savePageLayout(activeLayout);
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1866,7 +2482,7 @@ const renderCanvasElement = (el) => {
               width: getCanvasWidth(),
               maxWidth: '100%',
               minHeight: '100%',
-              backgroundColor: site.theme?.backgroundColor || '#ffffff',
+              backgroundColor: getPageBgColor(),
               color: site.theme?.textColor || '#333333',
               fontFamily: site.theme?.fontFamily || 'Inter, sans-serif',
               boxShadow: isPreview ? 'none' : '0 10px 40px rgba(0,0,0,0.5)',
@@ -1877,6 +2493,7 @@ const renderCanvasElement = (el) => {
             }}
           >
             <style dangerouslySetInnerHTML={{ __html: site.custom_css }} />
+            <style dangerouslySetInnerHTML={{ __html: getHoverStylesCss() }} />
             <style dangerouslySetInnerHTML={{ __html: `
               @keyframes fadeIn {
                 from { opacity: 0; }
@@ -1909,12 +2526,13 @@ const renderCanvasElement = (el) => {
             ` }} />
 
             {pages.length > 1 && (
-              <nav style={{ display: 'flex', justify_content: 'space-between', alignBars: 'center', padding: '15px 30px', borderBottom: '1px solid rgba(0,0,0,0.06)', background: 'rgba(0,0,0,0.01)' }}>
+              <nav style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px', borderBottom: '1px solid rgba(0,0,0,0.06)', background: 'rgba(0,0,0,0.01)' }}>
                 <span style={{ fontWeight: 'bold', color: site.theme?.primaryColor || '#6366f1' }}>{site.name}</span>
                 <div style={{ display: 'flex', gap: '20px', fontSize: '14px' }}>
                   {pages.map(p => (
                     <span 
                       key={p.id} 
+                      onClick={() => handleSwitchPage(p)}
                       style={{ 
                         fontWeight: activePage.id === p.id ? 'bold' : 'normal',
                         borderBottom: activePage.id === p.id ? `2px solid ${site.theme?.primaryColor || '#6366f1'}` : 'none',
@@ -1929,64 +2547,76 @@ const renderCanvasElement = (el) => {
               </nav>
             )}
 
-<div className="builder-canvas-wrapper" style={{ flex: 1, overflowY: 'auto', width: '100%', height: '100%' }}>
-  {activePage && activeLayout ? (
-    activeLayout.length === 0 ? (
-      <div style={{ padding: '80px 20px', textAlign: 'center', color: '#64748b', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-        <Sparkles size={48} style={{ marginBottom: '16px', color: 'var(--primary)' }} />
-        <h4 style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '20px' }}>Empty Canvas</h4>
-        <p style={{ fontSize: '14px', maxWidth: '300px', margin: '0 auto 24px' }}>
-          Your site has no sections. Click below to add a column layout to begin!
-        </p>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={() => handleAddSection(1)} className="btn-primary" style={{ padding: '10px 20px', cursor: 'pointer' }}>+ 1 Column</button>
-          <button onClick={() => handleAddSection(2)} className="btn-primary" style={{ padding: '10px 20px', cursor: 'pointer' }}>+ 2 Columns</button>
-        </div>
-      </div>
-    ) : (
-      activeLayout.map((sec, secIdx) => {
-        const secStyles = renderInlineStyles(sec.settings);
-        const containerWidth = sec.settings?.containerWidth || '1200px';
+            <div className="builder-canvas-wrapper" style={{ flex: 1, overflowY: 'auto', width: '100%', height: '100%' }}>
+              {activePage && activeLayout ? (
+                activeLayout.length === 0 ? (
+                  <div style={{ padding: '80px 20px', textAlign: 'center', color: '#64748b', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                    <Sparkles size={48} style={{ marginBottom: '16px', color: 'var(--primary)' }} />
+                    <h4 style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '20px' }}>Empty Canvas</h4>
+                    <p style={{ fontSize: '14px', maxWidth: '300px', margin: '0 auto 24px' }}>
+                      Your site has no sections. Click below to add a column layout to begin!
+                    </p>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button onClick={() => handleAddSection(1)} className="btn-primary" style={{ padding: '10px 20px', cursor: 'pointer' }}>+ 1 Column</button>
+                      <button onClick={() => handleAddSection(2)} className="btn-primary" style={{ padding: '10px 20px', cursor: 'pointer' }}>+ 2 Columns</button>
+                    </div>
+                  </div>
+                ) : (
+                  activeLayout.map((sec, secIdx) => {
+                    const secStyles = renderInlineStyles(sec.settings);
+                    const containerWidth = sec.settings?.containerWidth || '1200px';
 
-        return (
-          <section key={sec.id} style={{ position: 'relative', width: '100%', ...secStyles }} className={isPreview ? '' : 'builder-canvas-section'}>
-            {!isPreview && (
-              <div style={{ position: 'absolute', top: '4px', left: '4px', zIndex: 40, display: 'flex', gap: '4px', background: 'rgba(15,23,42,0.85)', padding: '3px', borderRadius: '4px' }}>
-                <span style={{ fontSize: '10px', color: '#fff', padding: '2px 4px', background: 'var(--primary)', borderRadius: '2px', fontWeight: 'bold' }}>Section</span>
-                <button onClick={(e) => { e.stopPropagation(); handleDeleteSection(sec.id); }} style={{ padding: '2px', background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }} title="Delete Section"><Trash2 size={11} /></button>
-              </div>
-            )}
-            <div style={{ maxWidth: containerWidth, margin: '0 auto', padding: '0 20px', boxSizing: 'border-box' }}>
-              {(sec.rows || []).map((row) => (
-                <div key={row.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', marginBottom: '20px', ...renderInlineStyles(row.settings) }} className={isPreview ? '' : 'builder-canvas-row'}>
-                  {(row.columns || []).map((col) => {
-                    const computedWidth = { '12': '100%', '6': 'calc(50% - 10px)', '4': 'calc(33.33% - 13.33px)', '3': 'calc(25% - 15px)', '8': 'calc(66.66% - 6.66px)', '9': 'calc(75% - 5px)' }[col.settings?.width || '12'] || '100%';
                     return (
-                      <div key={col.id} onClick={(e) => { if (!isPreview) { e.stopPropagation(); setSelectedColumnId(col.id); } }} style={{ flex: `0 0 ${computedWidth}`, width: computedWidth, minWidth: '280px', display: 'flex', flexDirection: 'column', gap: '15px', border: (!isPreview && selectedColumnId === col.id) ? '1px dashed var(--primary)' : '1px dashed transparent', padding: '8px', position: 'relative', minHeight: '450px', ...renderInlineStyles(col.settings) }}>
-                        {(col.elements || []).map(el => renderCanvasElement(el))}
-                        {!isPreview && (col.elements || []).length === 0 && <div style={{ padding: '15px', border: '1px dashed rgba(255,255,255,0.06)', borderRadius: '4px', textAlign: 'center', color: '#64748b', fontSize: '11px' }}>Column empty.</div>}
-                      </div>
+                      <section key={sec.id} style={{ position: 'relative', width: '100%', ...secStyles }} className={isPreview ? '' : 'builder-canvas-section'}>
+                        {!isPreview && (
+                          <div style={{ position: 'absolute', top: '4px', left: '4px', zIndex: 40, display: 'flex', gap: '4px', background: 'rgba(15,23,42,0.85)', padding: '3px', borderRadius: '4px' }}>
+                            <span style={{ fontSize: '10px', color: '#fff', padding: '2px 4px', background: 'var(--primary)', borderRadius: '2px', fontWeight: 'bold' }}>Section</span>
+                            <button onClick={(e) => { e.stopPropagation(); handleDeleteSection(sec.id); }} style={{ padding: '2px', background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }} title="Delete Section"><Trash2 size={11} /></button>
+                          </div>
+                        )}
+                        <div style={{ maxWidth: containerWidth, margin: '0 auto', padding: '0 20px', boxSizing: 'border-box' }}>
+                          {(sec.rows || []).map((row) => (
+                            <div key={row.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', marginBottom: '20px', ...renderInlineStyles(row.settings) }} className={isPreview ? '' : 'builder-canvas-row'}>
+                              {(row.columns || []).map((col) => {
+                                const computedWidth = { '12': '100%', '6': 'calc(50% - 10px)', '4': 'calc(33.33% - 13.33px)', '3': 'calc(25% - 15px)', '8': 'calc(66.66% - 6.66px)', '9': 'calc(75% - 5px)' }[col.settings?.width || '12'] || '100%';
+                                return (
+                                  <div 
+                                    key={col.id} 
+                                    onClick={(e) => { if (!isPreview) { e.stopPropagation(); setSelectedColumnId(col.id); } }} 
+                                    onDragOver={(e) => {
+                                      if (!isPreview) {
+                                        e.preventDefault();
+                                      }
+                                    }}
+                                    onDrop={(e) => {
+                                      if (!isPreview) {
+                                        e.preventDefault();
+                                        handleDropElement(e, col.id);
+                                      }
+                                    }}
+                                    style={{ flex: `0 0 ${computedWidth}`, width: computedWidth, minWidth: '280px', display: 'flex', flexDirection: 'column', gap: '15px', border: (!isPreview && selectedColumnId === col.id) ? '1px dashed var(--primary)' : '1px dashed transparent', padding: '8px', position: 'relative', minHeight: '450px', ...renderInlineStyles(col.settings) }}
+                                  >
+                                    {(col.elements || []).map(el => renderCanvasElement(el))}
+                                    {!isPreview && (col.elements || []).length === 0 && <div style={{ padding: '15px', border: '1px dashed rgba(255,255,255,0.06)', borderRadius: '4px', textAlign: 'center', color: '#64748b', fontSize: '11px' }}>Column empty. Drag elements here.</div>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ))}
+                        </div>
+                      </section>
                     );
-                  })}
+                  })
+                )
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#fff', textAlign: 'center' }}>
+                  <p>No page selected. Please select or create a new page.</p>
+                  <button onClick={() => setShowNewPageModal(true)} style={{ marginTop: '15px', padding: '10px 20px', cursor: 'pointer', background: 'var(--primary)', border: 'none', color: 'white', borderRadius: '5px' }}>
+                    + Add New Page
+                  </button>
                 </div>
-              ))}
+              )}
             </div>
-          </section>
-        );
-      })
-    )
-  ) : (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#fff', textAlign: 'center' }}>
-      <p>No page selected. Please select or create a new page.</p>
-      <button onClick={() => setShowNewPageModal(true)} style={{ marginTop: '15px', padding: '10px 20px', cursor: 'pointer', background: 'var(--primary)', border: 'none', color: 'white', borderRadius: '5px' }}>
-        + Add New Page
-      </button>
-    </div>
-  )}
-</div>
-
-
-
 
           </div>
           
@@ -2062,8 +2692,27 @@ const renderCanvasElement = (el) => {
                         type="text"
                         value={selectedElement.content?.src || ''}
                         onChange={(e) => updateSelectedElement({ content: { src: e.target.value } })}
-                        placeholder="Paste image or youtube url here"
+                        placeholder="Paste image or YouTube URL here"
                       />
+                    </div>
+                  )}
+
+                  {selectedElement.type === 'image' && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <label>Or Upload from Device</label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = (ev) => updateSelectedElement({ content: { src: ev.target.result } });
+                          reader.readAsDataURL(file);
+                        }}
+                        style={{ fontSize: '12px', padding: '4px 0' }}
+                      />
+                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', marginTop: '3px' }}>Image will be embedded as base64</span>
                     </div>
                   )}
 
@@ -2079,23 +2728,115 @@ const renderCanvasElement = (el) => {
                     </div>
                   )}
 
-                  {selectedElement.type === 'button' && (
-                    <div style={{ marginBottom: '12px' }}>
-                      <label>Action Destination Link</label>
-                      <input
-                        type="text"
-                        value={selectedElement.content?.link || ''}
-                        onChange={(e) => updateSelectedElement({ content: { link: e.target.value } })}
-                        placeholder="https://example.com or #features"
-                      />
-                    </div>
+                  {selectedElement.type === 'input' && (
+                    <>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label>Input Label</label>
+                        <input
+                          type="text"
+                          value={selectedElement.content?.label || ''}
+                          onChange={(e) => updateSelectedElement({ content: { label: e.target.value } })}
+                        />
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label>Placeholder Text</label>
+                        <input
+                          type="text"
+                          value={selectedElement.content?.placeholder || ''}
+                          onChange={(e) => updateSelectedElement({ content: { placeholder: e.target.value } })}
+                        />
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label>Input Type</label>
+                        <select
+                          value={selectedElement.content?.inputType || 'text'}
+                          onChange={(e) => updateSelectedElement({ content: { inputType: e.target.value } })}
+                        >
+                          <option value="text">Text</option>
+                          <option value="number">Number</option>
+                          <option value="email">Email</option>
+                          <option value="password">Password</option>
+                          <option value="date">Date</option>
+                        </select>
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label>Field Name (API key)</label>
+                        <input
+                          type="text"
+                          value={selectedElement.content?.name || ''}
+                          onChange={(e) => updateSelectedElement({ content: { name: e.target.value } })}
+                          placeholder="e.g. user_email"
+                        />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedElement.content?.required || false}
+                          onChange={(e) => updateSelectedElement({ content: { required: e.target.checked } })}
+                          id="inputRequired"
+                          style={{ width: 'auto', cursor: 'pointer' }}
+                        />
+                        <label htmlFor="inputRequired" style={{ margin: 0, cursor: 'pointer' }}>Is Required</label>
+                      </div>
+                    </>
+                  )}
+
+                  {selectedElement.type === 'form' && (
+                    <>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label>Submit Button Text</label>
+                        <input
+                          type="text"
+                          value={selectedElement.content?.buttonText || 'Send Message'}
+                          onChange={(e) => updateSelectedElement({ content: { buttonText: e.target.value } })}
+                        />
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label>Manage Form Fields</label>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '6px' }}>
+                          {(selectedElement.content?.fields || []).map((field, idx) => (
+                            <div key={field.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                              <span style={{ fontSize: '12px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                                {field.label} ({field.type})
+                              </span>
+                              <button 
+                                onClick={() => {
+                                  const filtered = selectedElement.content.fields.filter(f => f.id !== field.id);
+                                  updateSelectedElement({ content: { fields: filtered } });
+                                }}
+                                style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          ))}
+                          <button 
+                            onClick={() => {
+                              const newField = {
+                                id: `field_${Date.now()}`,
+                                type: 'text',
+                                label: 'Custom Label',
+                                placeholder: 'Placeholder text...',
+                                required: false
+                              };
+                              const fields = [...(selectedElement.content?.fields || []), newField];
+                              updateSelectedElement({ content: { fields } });
+                            }}
+                            className="btn-secondary" 
+                            style={{ padding: '6px', fontSize: '11px' }}
+                          >
+                            + Add Custom Field
+                          </button>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
 
                 <div style={{ borderTop: '1px solid var(--border)', paddingTop: '15px' }}>
                   <h4 style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--text-secondary)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Visual Styling</h4>
 
-                  {['heading', 'text', 'button'].includes(selectedElement.type) && (
+                  {['heading', 'text', 'button', 'input'].includes(selectedElement.type) && (
                     <div style={{ marginBottom: '15px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                         <label>Font Size</label>
@@ -2139,7 +2880,7 @@ const renderCanvasElement = (el) => {
                   )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '15px' }}>
-                    {['heading', 'text', 'button', 'form'].includes(selectedElement.type) && (
+                    {['heading', 'text', 'button', 'form', 'input'].includes(selectedElement.type) && (
                       <div>
                         <label>Text Color</label>
                         <input
@@ -2162,6 +2903,29 @@ const renderCanvasElement = (el) => {
                       </div>
                     )}
                   </div>
+
+                  {selectedElement.type === 'form' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '15px' }}>
+                      <div>
+                        <label>Btn Background</label>
+                        <input
+                          type="color"
+                          value={selectedElement.styles?.buttonBgColor || '#6366f1'}
+                          onChange={(e) => updateSelectedElement({ styles: { buttonBgColor: e.target.value } })}
+                          style={{ height: '35px', padding: '0', border: 'none', cursor: 'pointer' }}
+                        />
+                      </div>
+                      <div>
+                        <label>Btn Text Color</label>
+                        <input
+                          type="color"
+                          value={selectedElement.styles?.buttonTextColor || '#ffffff'}
+                          onChange={(e) => updateSelectedElement({ styles: { buttonTextColor: e.target.value } })}
+                          style={{ height: '35px', padding: '0', border: 'none', cursor: 'pointer' }}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   <div style={{ marginBottom: '15px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
@@ -2210,6 +2974,57 @@ const renderCanvasElement = (el) => {
                       />
                     </div>
                   )}
+                </div>
+
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: '15px', marginTop: '15px' }}>
+                  <h4 style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--text-secondary)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Hover Styling</h4>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+                    <div>
+                      <label>Hover Bg</label>
+                      <input
+                        type="color"
+                        value={selectedElement.hoverStyles?.backgroundColor || '#6366f1'}
+                        onChange={(e) => updateSelectedElement({ hoverStyles: { backgroundColor: e.target.value } })}
+                        style={{ height: '35px', padding: '0', border: 'none', cursor: 'pointer' }}
+                      />
+                    </div>
+                    <div>
+                      <label>Hover Text</label>
+                      <input
+                        type="color"
+                        value={selectedElement.hoverStyles?.color || '#ffffff'}
+                        onChange={(e) => updateSelectedElement({ hoverStyles: { color: e.target.value } })}
+                        style={{ height: '35px', padding: '0', border: 'none', cursor: 'pointer' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+                    <div>
+                      <label>Hover Scale</label>
+                      <select
+                        value={selectedElement.hoverStyles?.transform || 'none'}
+                        onChange={(e) => updateSelectedElement({ hoverStyles: { transform: e.target.value } })}
+                      >
+                        <option value="none">None</option>
+                        <option value="scale(1.05)">Zoom In (1.05x)</option>
+                        <option value="scale(1.1)">Zoom In (1.1x)</option>
+                        <option value="scale(0.95)">Zoom Out (0.95x)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>Transition (s)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="2"
+                        value={selectedElement.hoverStyles?.transitionSpeed || '0.2'}
+                        onChange={(e) => updateSelectedElement({ hoverStyles: { transitionSpeed: parseFloat(e.target.value) } })}
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div style={{ borderTop: '1px solid var(--border)', paddingTop: '15px', marginTop: '15px' }}>
@@ -2298,6 +3113,7 @@ const renderCanvasElement = (el) => {
                       <option value="anchor">Scroll to Anchor (#id)</option>
                       <option value="email">Email (mailto:)</option>
                       <option value="form">Open Contact Form Modal</option>
+                      <option value="submit_inputs">Submit Inputs to Backend</option>
                     </select>
                   </div>
 
@@ -2375,6 +3191,21 @@ const renderCanvasElement = (el) => {
                     </>
                   )}
 
+                  {selectedElement.action?.type === 'submit_inputs' && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <label>Form Submit Endpoint URL</label>
+                      <input
+                        type="text"
+                        value={selectedElement.action?.value || ''}
+                        onChange={(e) => updateSelectedElement({ action: { value: e.target.value } })}
+                        placeholder="e.g., http://localhost:8001/api/submit/"
+                      />
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginTop: '4px' }}>
+                        Collects all input values on the page and submits them to this URL via POST.
+                      </span>
+                    </div>
+                  )}
+
                   {selectedElement.action?.type === 'form' && (
                     <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
                       When clicked, a contact form modal pop-up will overlay the page.
@@ -2404,79 +3235,79 @@ const renderCanvasElement = (el) => {
                             ...row,
                             columns: (row.columns || []).map(col => {
                               if (col.id === selectedColumnId) {
-                                  return {
-                                    ...col,
-                                    settings: { ...col.settings, width: widthVal }
-                                  };
-                                }
-                                return col;
-                              })
-                            }))
-                          }));
-                          updateLayout(nextLayout);
-                        }}
-                      >
-                        <option value="12">12 - Full Row Width (100%)</option>
-                        <option value="9">9 - Three-Quarters (75%)</option>
-                        <option value="8">8 - Two-Thirds (66.6%)</option>
-                        <option value="6">6 - Half Row Width (50%)</option>
-                        <option value="4">4 - One-Third Width (33.3%)</option>
-                        <option value="3">3 - One-Quarter Width (25%)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label>Padding Top/Bottom</label>
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={
-                          activeLayout.flatMap(s => s.rows).flatMap(r => r.columns).find(c => c.id === selectedColumnId)?.settings?.paddingTop || '0'
-                        }
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          const nextLayout = activeLayout.map(sec => ({
-                            ...sec,
-                            rows: (sec.rows || []).map(row => ({
-                              ...row,
-                              columns: (row.columns || []).map(col => {
-                                if (col.id === selectedColumnId) {
-                                  return {
-                                    ...col,
-                                    settings: { ...col.settings, paddingTop: val, paddingBottom: val }
-                                  };
-                                }
-                                return col;
-                              })
-                            }))
-                          }));
-                          updateLayout(nextLayout);
-                        }}
-                        style={{ padding: 0 }}
-                      />
-                    </div>
-                    
-                    <button 
-                      onClick={() => setSelectedColumnId(null)} 
-                      className="btn-secondary" 
-                      style={{ width: '100%', marginTop: '10px', fontSize: '12px' }}
+                                return {
+                                  ...col,
+                                  settings: { ...col.settings, width: widthVal }
+                                };
+                              }
+                              return col;
+                            })
+                          }))
+                        }));
+                        updateLayout(nextLayout);
+                      }}
                     >
-                      Unselect Column
-                    </button>
+                      <option value="12">12 - Full Row Width (100%)</option>
+                      <option value="9">9 - Three-Quarters (75%)</option>
+                      <option value="8">8 - Two-Thirds (66.6%)</option>
+                      <option value="6">6 - Half Row Width (50%)</option>
+                      <option value="4">4 - One-Third Width (33.3%)</option>
+                      <option value="3">3 - One-Quarter Width (25%)</option>
+                    </select>
                   </div>
+
+                  <div>
+                    <label>Padding Top/Bottom</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={
+                        activeLayout.flatMap(s => s.rows).flatMap(r => r.columns).find(c => c.id === selectedColumnId)?.settings?.paddingTop || '0'
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const nextLayout = activeLayout.map(sec => ({
+                          ...sec,
+                          rows: (sec.rows || []).map(row => ({
+                            ...row,
+                            columns: (row.columns || []).map(col => {
+                              if (col.id === selectedColumnId) {
+                                return {
+                                  ...col,
+                                  settings: { ...col.settings, paddingTop: val, paddingBottom: val }
+                                };
+                              }
+                              return col;
+                            })
+                          }))
+                        }));
+                        updateLayout(nextLayout);
+                      }}
+                      style={{ padding: 0 }}
+                    />
+                  </div>
+                  
+                  <button 
+                    onClick={() => setSelectedColumnId(null)} 
+                    className="btn-secondary" 
+                    style={{ width: '100%', marginTop: '10px', fontSize: '12px' }}
+                  >
+                    Unselect Column
+                  </button>
                 </div>
-              ) : (
-                <div style={{ textAlign: 'center', padding: '40px 10px', color: 'var(--text-secondary)' }}>
-                  <Settings size={36} style={{ marginBottom: '15px', color: 'var(--text-muted)' }} />
-                  <h4 style={{ fontSize: '14px', fontWeight: 'bold', color: '#fff', marginBottom: '8px' }}>Inspector Panel</h4>
-                  <p style={{ fontSize: '12px', lineHeight: '1.4' }}>
-                    Select any heading, text, button, column, or contact form on the design canvas to configure content styles here.
-                  </p>
-                </div>
-              )}
-            </aside>
-          )}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px 10px', color: 'var(--text-secondary)' }}>
+                <Settings size={36} style={{ marginBottom: '15px', color: 'var(--text-muted)' }} />
+                <h4 style={{ fontSize: '14px', fontWeight: 'bold', color: '#fff', marginBottom: '8px' }}>Inspector Panel</h4>
+                <p style={{ fontSize: '12px', lineHeight: '1.4' }}>
+                  Select any heading, text, button, column, or contact form on the design canvas to configure content styles here.
+                </p>
+              </div>
+            )}
+          </aside>
+        )}
 
       </div>
 
@@ -2585,118 +3416,117 @@ const renderCanvasElement = (el) => {
           </div>
         </div>
       )}
-{isSaveModalOpen && (
-  <div style={{
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100vw',
-    height: '100vh',
-    backgroundColor: 'rgba(15, 23, 42, 0.75)', 
-    backdropFilter: 'blur(4px)', 
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 9999,
-  }}>
-    <div style={{
-      backgroundColor: '#1e293b', 
-      border: '1px solid #334155',
-      borderRadius: '12px',
-      padding: '24px',
-      width: '400px',
-      textAlign: 'center',
-      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
-      position: 'relative',
-    }}>
-      <button 
-        onClick={() => setIsSaveModalOpen(false)}
-        style={{
-          position: 'absolute',
-          top: '12px',
-          right: '12px',
-          background: 'none',
-          border: 'none',
-          color: '#94a3b8',
-          cursor: 'pointer'
-        }}
-      >
-        ✕
-      </button>
 
-      <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'center' }}>
-        <span style={{ fontSize: '48px', color: '#6366f1' }}>✓</span>
-      </div>
+      {isSaveModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: 'rgba(15, 23, 42, 0.75)', 
+          backdropFilter: 'blur(4px)', 
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+        }}>
+          <div style={{
+            backgroundColor: '#1e293b', 
+            border: '1px solid #334155',
+            borderRadius: '12px',
+            padding: '24px',
+            width: '400px',
+            textAlign: 'center',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+            position: 'relative',
+          }}>
+            <button 
+              onClick={() => setIsSaveModalOpen(false)}
+              style={{
+                position: 'absolute',
+                top: '12px',
+                right: '12px',
+                background: 'none',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer'
+              }}
+            >
+              ✕
+            </button>
 
-      <h3 style={{ color: '#f8fafc', fontSize: '18px', fontWeight: '600', marginBottom: '8px', fontFamily: 'sans-serif' }}>
-        Changes Saved Successfully!
-      </h3>
-      
-      <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '20px', fontFamily: 'sans-serif' }}>
-        Your canvas layout and adjustments have been securely updated on the server.
-      </p>
+            <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'center' }}>
+              <span style={{ fontSize: '48px', color: '#6366f1' }}>✓</span>
+            </div>
 
-      <button
-        onClick={() => setIsSaveModalOpen(false)}
-        className="btn-primary" 
-        style={{
-          width: '100%',
-          padding: '10px',
-          borderRadius: '6px',
-          fontWeight: 'bold',
-          fontSize: '14px',
-          cursor: 'pointer',
-        }}
-      >
-        Awesome, Got it
-      </button>
-    </div>
-  </div>
-)}
+            <h3 style={{ color: '#f8fafc', fontSize: '18px', fontWeight: '600', marginBottom: '8px', fontFamily: 'sans-serif' }}>
+              Changes Saved Successfully!
+            </h3>
+            
+            <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '20px', fontFamily: 'sans-serif' }}>
+              Your canvas layout and adjustments have been securely updated on the server.
+            </p>
 
+            <button
+              onClick={() => setIsSaveModalOpen(false)}
+              className="btn-primary" 
+              style={{
+                width: '100%',
+                padding: '10px',
+                borderRadius: '6px',
+                fontWeight: 'bold',
+                fontSize: '14px',
+                cursor: 'pointer',
+              }}
+            >
+              Awesome, Got it
+            </button>
+          </div>
+        </div>
+      )}
 
-{isDeleteModalOpen && (
-  <div className="modal-overlay" style={{
-    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
-    backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', 
-    alignItems: 'center', justifyContent: 'center', zIndex: 9999
-  }}>
-    <div className="modal-content" style={{
-      backgroundColor: '#1E2128',
-      padding: '24px', borderRadius: '8px', width: '400px',
-      color: 'white', boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
-    }}>
-      <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 'bold' }}>
-        Delete Page
-      </h3>
-      <p style={{ marginBottom: '24px', color: '#A0AABF', fontSize: '14px' }}>
-        Are you sure you want to delete this page? This action cannot be undone.
-      </p>
-      
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-        <button 
-          onClick={cancelDelete}
-          style={{
-            padding: '8px 16px', borderRadius: '6px', cursor: 'pointer',
-            backgroundColor: 'transparent', border: '1px solid #4B5563', color: 'white'
-          }}
-        >
-          Cancel
-        </button>
-        <button 
-          onClick={confirmDeletePage}
-          style={{
-            padding: '8px 16px', borderRadius: '6px', cursor: 'pointer',
-            backgroundColor: '#EF4444', border: 'none', color: 'white', fontWeight: 'bold'
-          }}
-        >
-          Delete
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-
+      {isDeleteModalOpen && (
+        <div className="modal-overlay" style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+          backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', 
+          alignItems: 'center', justifyContent: 'center', zIndex: 9999
+        }}>
+          <div className="modal-content" style={{
+            backgroundColor: '#1E2128',
+            padding: '24px', borderRadius: '8px', width: '400px',
+            color: 'white', boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 'bold' }}>
+              Delete Page
+            </h3>
+            <p style={{ marginBottom: '24px', color: '#A0AABF', fontSize: '14px' }}>
+              Are you sure you want to delete this page? This action cannot be undone.
+            </p>
+            
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button 
+                onClick={cancelDelete}
+                style={{
+                  padding: '8px 16px', borderRadius: '6px', cursor: 'pointer',
+                  backgroundColor: 'transparent', border: '1px solid #4B5563', color: 'white'
+                }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmDeletePage}
+                style={{
+                  padding: '8px 16px', borderRadius: '6px', cursor: 'pointer',
+                  backgroundColor: '#EF4444', border: 'none', color: 'white', fontWeight: 'bold'
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeFormEl && (
         <div style={{
@@ -2743,14 +3573,17 @@ const renderCanvasElement = (el) => {
             <form onSubmit={async (e) => {
               e.preventDefault();
               const formEl = e.target;
-              const name = formEl.name.value;
-              const email = formEl.email.value;
-              const message = formEl.message.value;
+              const data = {};
+              const fields = activeFormEl.content?.fields || [];
+              fields.forEach(f => {
+                data[f.id] = formEl[f.id].value;
+              });
+
               try {
                 const res = await fetch(`http://127.0.0.1:8000/api/sites/${siteId}/submit-message/`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ name, email, message })
+                  body: JSON.stringify(data)
                 });
                 if (res.ok) {
                   alert("Message sent successfully!");
@@ -2763,20 +3596,18 @@ const renderCanvasElement = (el) => {
                 alert("An error occurred. Please try again.");
               }
             }}>
-              <div style={{ marginBottom: '15px', textAlign: 'left' }}>
-                <label style={{ fontSize: '12px', color: '#cbd5e1', display: 'block', marginBottom: '5px', fontFamily: 'sans-serif' }}>Name</label>
-                <input type="text" name="name" required style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid #334155', borderRadius: '6px', color: '#fff', padding: '10px' }} />
-              </div>
-              <div style={{ marginBottom: '15px', textAlign: 'left' }}>
-                <label style={{ fontSize: '12px', color: '#cbd5e1', display: 'block', marginBottom: '5px', fontFamily: 'sans-serif' }}>Email Address</label>
-                <input type="email" name="email" required style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid #334155', borderRadius: '6px', color: '#fff', padding: '10px' }} />
-              </div>
-              <div style={{ marginBottom: '20px', textAlign: 'left' }}>
-                <label style={{ fontSize: '12px', color: '#cbd5e1', display: 'block', marginBottom: '5px', fontFamily: 'sans-serif' }}>Message</label>
-                <textarea name="message" required rows="4" style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid #334155', borderRadius: '6px', color: '#fff', padding: '10px', resize: 'none' }}></textarea>
-              </div>
+              {(activeFormEl.content?.fields || []).map(f => (
+                <div key={f.id} style={{ marginBottom: '15px', textAlign: 'left' }}>
+                  <label style={{ fontSize: '12px', color: '#cbd5e1', display: 'block', marginBottom: '5px', fontFamily: 'sans-serif' }}>{f.label}</label>
+                  {f.type === 'textarea' ? (
+                    <textarea name={f.id} required={f.required} rows="4" placeholder={f.placeholder || ''} style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid #334155', borderRadius: '6px', color: '#fff', padding: '10px', resize: 'none' }}></textarea>
+                  ) : (
+                    <input type={f.type} name={f.id} required={f.required} placeholder={f.placeholder || ''} style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid #334155', borderRadius: '6px', color: '#fff', padding: '10px' }} />
+                  )}
+                </div>
+              ))}
               <button type="submit" className="btn-primary" style={{ width: '100%', padding: '12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer' }}>
-                Submit Message
+                {activeFormEl.content?.buttonText || 'Submit Message'}
               </button>
             </form>
           </div>
@@ -2785,6 +3616,6 @@ const renderCanvasElement = (el) => {
 
     </div>
   );
-   }
+}
 
 export default Builder;
