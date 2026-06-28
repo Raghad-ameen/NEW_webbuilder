@@ -38,6 +38,7 @@ function Builder() {
   const [activeLeftTab, setActiveLeftTab] = useState('elements');
   const [viewMode, setViewMode] = useState('desktop'); 
   const [isPreview, setIsPreview] = useState(false);
+  const previewWindowRef = useRef(null);
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -236,9 +237,14 @@ function Builder() {
         setIsSaveModalOpen(true);
       } else {
         setIsSaving(false);
-        const errorData = await response.json();
-        console.error('Save failed:', errorData);
-        alert('Failed to save layout. Server returned an error.');
+        if (response.status === 401) {
+          alert('Session expired. Please log in again.');
+          navigate('/');
+        } else {
+          const errorData = await response.json();
+          console.error('Save failed:', errorData);
+          alert('Failed to save layout. Server returned an error.');
+        }
       }
     } catch (err) {
       setIsSaving(false);
@@ -369,7 +375,7 @@ function Builder() {
     }
   };
 
-  const compileToStaticHtml = (page = activePage, currentSite = site, allPages = pages) => {
+  const compileToStaticHtml = (page = activePage, currentSite = site, allPages = pages, previewViewMode = 'desktop') => {
     if (!page) return '';
     const fontFamily = currentSite.theme?.fontFamily || 'Inter, sans-serif';
     const fontName = fontFamily.split(',')[0].replace(/['"]/g, '');
@@ -421,6 +427,10 @@ function Builder() {
       });
     });
 
+    const canvasWidth = previewViewMode === 'mobile' ? '375px' : previewViewMode === 'tablet' ? '768px' : '100%';
+    const maxContainerWidth = previewViewMode === 'mobile' ? '375px' : previewViewMode === 'tablet' ? '768px' : '1200px';
+    const containerPadding = previewViewMode === 'mobile' ? '15px' : '20px';
+
     let styles = `
       ${fontImport}
       
@@ -433,12 +443,25 @@ function Builder() {
 
       * { box-sizing: border-box; margin: 0; padding: 0; }
 
-      body {
-        background-color: var(--bg-color);
+      html, body {
+        background-color: ${pageBgColor};
         color: var(--text-color);
         font-family: var(--font-family);
         line-height: 1.5;
         overflow-x: hidden;
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        min-height: 100vh;
+      }
+
+      .preview-wrapper {
+        width: ${canvasWidth};
+        max-width: 100%;
+        margin: 0 auto;
+        position: relative;
+        background-color: var(--bg-color);
+        min-height: 100vh;
       }
 
       .site-section {
@@ -449,14 +472,17 @@ function Builder() {
 
       .section-container {
         width: 100%;
-        max-width: 1200px;
+        max-width: ${maxContainerWidth};
         margin: 0 auto;
-        padding: 0 20px;
+        padding: 0 ${containerPadding};
+        position: relative;
+        box-sizing: border-box;
       }
 
       .element-wrapper {
         position: absolute;
         display: inline-block;
+        box-sizing: border-box;
       }
 
       .site-builder-btn {
@@ -594,7 +620,9 @@ function Builder() {
       `;
 
       (sec.elements || []).forEach(el => {
-        let elStyles = `width: ${el.width ? `${el.width}px` : '100%'}; height: ${el.height ? `${el.height}px` : 'auto'}; left: ${el.x || 0}px; top: ${el.y || 0}px; `;
+        let elStyles = `left: ${el.x || 0}px; top: ${el.y || 0}px; position: absolute; `;
+        if (el.width) elStyles += `width: ${el.width}px; `;
+        if (el.height) elStyles += `height: ${el.height}px; `;
         
         if (el.styles) {
           Object.keys(el.styles).forEach(k => {
@@ -620,9 +648,9 @@ function Builder() {
           innerMarkup = `<div style="font-size: inherit; color: inherit;">${(el.content?.text || 'Paragraph text').replace(/\n/g, '<br>')}</div>`;
         } else if (el.type === 'button') {
           if (el.action && el.action.type === 'submit_inputs') {
-            innerMarkup = `<button class="site-builder-btn" onclick="submitInputs(event, '${el.action.value || ''}')" style="width: 100%; height: 100%; border: none; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; padding: 0; border-radius: inherit;">${el.content?.text || 'Submit'}</button>`;
+            innerMarkup = `<button class="site-builder-btn" onclick="submitInputs(event, '${el.action.value || ''}')" style="border: none; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; padding: 0; border-radius: inherit;">${el.content?.text || 'Submit'}</button>`;
           } else {
-            innerMarkup = `<button class="site-builder-btn" style="width: 100%; height: 100%; border: none; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; padding: 0; border-radius: inherit;">${el.content?.text || 'Button'}</button>`;
+            innerMarkup = `<button class="site-builder-btn" style="border: none; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; padding: 0; border-radius: inherit;">${el.content?.text || 'Button'}</button>`;
           }
         } else if (el.type === 'image') {
           innerMarkup = `<img src="${el.content?.src}" alt="${el.content?.alt || 'Graphic'}" style="width: 100%; height: 100%; display: block; border-radius: inherit;" />`;
@@ -739,11 +767,14 @@ function Builder() {
         <meta name="description" content="${page.meta_description || ''}">
         <style>
           ${styles}
+          body { display: flex; justify-content: center; }
         </style>
       </head>
       <body>
-        ${navHtml}
-        ${bodyHtml}
+        <div class="preview-wrapper">
+          ${navHtml}
+          ${bodyHtml}
+        </div>
 
         <div id="contact-modal" class="modal-overlay">
           <div class="modal-content">
@@ -891,9 +922,17 @@ function Builder() {
     
     saveTimeout.current = setTimeout(async () => {
       try {
+        const token = localStorage.getItem('access_token');
+        const headers = {
+          'Content-Type': 'application/json',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
         await fetch(`/api/pages/${activePage.id}/`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: headers,
           body: JSON.stringify({ 
             layout: layoutData,
             meta_description: activePage.meta_description || ''
@@ -1523,20 +1562,37 @@ function Builder() {
   const handlePublishToggle = async (shouldPublish) => {
     setIsSaving(true);
     try {
-      const res = await fetch(`/api/sites/${siteId}/`, {
+      const token = localStorage.getItem('access_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(`http://127.0.0.1:8000/api/sites/${siteId}/`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify({ is_published: shouldPublish })
       });
+      
       if (res.ok) {
         const updated = await res.json();
         setSite(updated);
         if (shouldPublish) {
           setShowPublishModal(true);
         }
+      } else {
+        if (res.status === 401) {
+          alert('Session expired. Please log in again.');
+          navigate('/');
+        } else {
+          alert('Failed to publish. Please try again.');
+        }
       }
     } catch (err) {
       console.error('Failed to change publish status:', err);
+      alert('An error occurred while publishing.');
     } finally {
       setIsSaving(false);
     }
@@ -1810,7 +1866,8 @@ function Builder() {
             position: 'absolute',
             display: 'inline-block',
             zIndex: isSelected ? 50 : 10,
-            border: isSelected && !isPreview ? '2px dashed #6366f1' : 'none',
+            outline: isSelected && !isPreview ? '1px dashed #6366f1' : 'none',
+            outlineOffset: '-1px',
             ...inlineStyles,
             ...getAnimationStyles(el)
           }}
@@ -2158,10 +2215,10 @@ function Builder() {
             <>
               {/* History Controls */}
               <div style={{ display: 'flex', gap: '2px', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}>
-                <button onClick={handleUndo} disabled={historyPointer <= 0} className="btn-secondary" style={{ padding: '6px 10px', opacity: historyPointer <= 0 ? 0.4 : 1 }} title="Undo (Ctrl+Z)">
+                <button onClick={handleUndo} disabled={historyPointer <= 0} className="btn-secondary" style={{ padding: '6px 10px', opacity: historyPointer <= 0 ? 0.4 : 1 }} title="Undo">
                   <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
                 </button>
-                <button onClick={handleRedo} disabled={historyPointer >= history.length - 1} className="btn-secondary" style={{ padding: '6px 10px', opacity: historyPointer >= history.length - 1 ? 0.4 : 1 }} title="Redo (Ctrl+Y)">
+                <button onClick={handleRedo} disabled={historyPointer >= history.length - 1} className="btn-secondary" style={{ padding: '6px 10px', opacity: historyPointer >= history.length - 1 ? 0.4 : 1 }} title="Redo">
                   <RefreshCw size={14} />
                 </button>
               </div>
@@ -2202,7 +2259,7 @@ function Builder() {
               {selectedElementIds.length > 0 && (
                 <div style={{ display: 'flex', gap: '2px', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}>
                   {selectedElementIds.length > 1 && (
-                    <button onClick={handleGroupElements} className="btn-secondary" style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', gap: '3px' }} title="Group Selected (Ctrl+G)">
+                    <button onClick={handleGroupElements} className="btn-secondary" style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', gap: '3px' }} title="Group Selected">
                       <Group size={13} />
                     </button>
                   )}
@@ -2214,13 +2271,13 @@ function Builder() {
                       </button>
                     ) : null;
                   })()}
-                  <button onClick={handleCopy} className="btn-secondary" style={{ padding: '6px 8px' }} title="Copy (Ctrl+C)">
+                  <button onClick={handleCopy} className="btn-secondary" style={{ padding: '6px 8px' }} title="Copy">
                     <ClipboardCopy size={13} />
                   </button>
-                  <button onClick={handlePaste} className="btn-secondary" style={{ padding: '6px 8px', opacity: clipboard ? 1 : 0.4 }} disabled={!clipboard} title="Paste (Ctrl+V)">
+                  <button onClick={handlePaste} className="btn-secondary" style={{ padding: '6px 8px', opacity: clipboard ? 1 : 0.4 }} disabled={!clipboard} title="Paste">
                     <ClipboardPaste size={13} />
                   </button>
-                  <button onClick={handleDeleteSelected} className="btn-secondary" style={{ padding: '6px 8px', color: '#ff4d4d' }} title="Delete (Del)">
+                  <button onClick={handleDeleteSelected} className="btn-secondary" style={{ padding: '6px 8px', color: '#ff4d4d' }} title="Delete">
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -2264,16 +2321,18 @@ function Builder() {
           </button>
 
           <button 
-            onClick={() => {
-              setIsPreview(!isPreview);
-              if (!isPreview) {
-                setSelectedElementIds([]);
-              }
-            }} 
+            onClick={() => setIsPreview(!isPreview)}
             className="btn-secondary" 
-            style={{ padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
+            style={{ 
+              padding: '6px 10px', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '4px', 
+              fontSize: '12px',
+              background: isPreview ? 'var(--primary)' : 'transparent'
+            }}
           >
-            {isPreview ? <><EyeOff size={14} /> Edit</> : <><Eye size={14} /> Preview</>}
+            {isPreview ? <><EyeOff size={14} /> Exit Preview</> : <><Eye size={14} /> Preview</>}
           </button>
           
           {/* Separator */}
@@ -2428,21 +2487,7 @@ function Builder() {
                     <Plus size={16} /> + Add New Section
                   </button>
                   
-                  <div style={{ marginTop: '20px', padding: '12px', background: 'rgba(99, 102, 241, 0.1)', borderRadius: '6px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
-                    <h4 style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', color: 'var(--primary)' }}>⌨️ Keyboard Shortcuts</h4>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                      <div><code>Ctrl+Z</code> Undo</div>
-                      <div><code>Ctrl+Y</code> Redo</div>
-                      <div><code>Ctrl+C</code> Copy</div>
-                      <div><code>Ctrl+V</code> Paste</div>
-                      <div><code>Ctrl+A</code> Select All</div>
-                      <div><code>Ctrl+G</code> Group Selected</div>
-                      <div><code>Delete</code> Delete Selected</div>
-                      <div><code>Esc</code> Deselect All</div>
-                      <div><code>Ctrl+Click</code> Multi-select</div>
-                      <div><code>Lasso</code> Drag to select</div>
-                    </div>
-                  </div>
+                 
                 </div>
               )}
 
@@ -2727,173 +2772,216 @@ function Builder() {
           </aside>
         )}
 
-        <div 
-          ref={viewportRef}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          style={{ 
-            flexGrow: 1, 
-            padding: isPreview ? '0' : '40px', 
-            overflowY: 'auto', 
-            display: 'flex', 
-            justifyContent: 'center',
-            alignItems: 'flex-start',
-            background: '#090d16',
-            boxShadow: 'inset 0 0 100px rgba(0,0,0,0.8)',
-            position: 'relative'
-          }}
-        >
-          <div 
+        {isPreview ? (
+          /* ===== TRUE FULL-SCREEN IFRAME PREVIEW ===== */
+          /* Renders the exact compiled HTML that gets deployed — pixel-perfect, real fonts, hover effects, animations */
+          <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+            {/* Slim page-switcher bar */}
+            {pages.length > 1 && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '6px 16px', background: 'rgba(10,12,20,0.95)',
+                borderBottom: '1px solid rgba(255,255,255,0.06)',
+                flexShrink: 0, overflowX: 'auto',
+              }}>
+                <span style={{ fontSize: '10px', color: '#475569', fontWeight: '600', marginRight: '4px', flexShrink: 0 }}>PAGES</span>
+                {pages.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => handleSwitchPage(p)}
+                    style={{
+                      padding: '3px 12px', borderRadius: '20px', border: 'none', cursor: 'pointer',
+                      background: activePage?.id === p.id ? 'var(--primary)' : 'rgba(255,255,255,0.06)',
+                      color: activePage?.id === p.id ? '#fff' : '#64748b',
+                      fontSize: '11px', fontWeight: '500', flexShrink: 0,
+                    }}
+                  >
+                    {p.title}
+                  </button>
+                ))}
+                <div style={{ flex: 1 }} />
+                <span style={{ fontSize: '10px', color: '#334155', fontStyle: 'italic' }}>
+                  This is an exact preview of the published site
+                </span>
+              </div>
+            )}
+            <iframe
+              key={`preview-${activePage?.id}-${JSON.stringify(activeLayout).length}`}
+              srcDoc={compileToStaticHtml({ ...activePage, layout: activeLayout }, site, pages, viewMode)}
+              style={{
+                flex: 1,
+                width: '100%',
+                border: 'none',
+                background: getPageBgColor(),
+              }}
+              title="Live Preview"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            />
+          </div>
+        ) : (
+          /* ===== EDITOR CANVAS ===== */
+          <div
+            ref={viewportRef}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
             style={{
-              width: getCanvasWidth(),
-              maxWidth: '100%',
-              minHeight: '100%',
-              backgroundColor: getPageBgColor(),
-              color: site.theme?.textColor || '#333333',
-              fontFamily: site.theme?.fontFamily || 'Inter, sans-serif',
-              boxShadow: isPreview ? 'none' : '0 10px 40px rgba(0,0,0,0.5)',
-              borderRadius: isPreview ? '0' : 'var(--radius-md)',
-              border: isPreview ? 'none' : '2px solid var(--border)',
-              transition: 'width 0.3s ease-in-out, border-radius 0.3s',
-              overflow: 'hidden',
+              flexGrow: 1,
+              padding: '40px',
+              overflowY: 'auto',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'flex-start',
+              background: '#090d16',
+              boxShadow: 'inset 0 0 100px rgba(0,0,0,0.8)',
               position: 'relative'
             }}
           >
-            <style dangerouslySetInnerHTML={{ __html: site.custom_css }} />
-            <style dangerouslySetInnerHTML={{ __html: getHoverStylesCss() }} />
-            <style dangerouslySetInnerHTML={{ __html: `
-              @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-              @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-              @keyframes slideDown { from { transform: translateY(-30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-              @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-15px); } }
-              @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-              @keyframes zoomIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-              @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-            ` }} />
+            <div
+              style={{
+                width: getCanvasWidth(),
+                maxWidth: '100%',
+                minHeight: '100%',
+                backgroundColor: getPageBgColor(),
+                color: site.theme?.textColor || '#333333',
+                fontFamily: site.theme?.fontFamily || 'Inter, sans-serif',
+                boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
+                borderRadius: 'var(--radius-md)',
+                border: '2px solid var(--border)',
+                transition: 'width 0.3s ease-in-out, border-radius 0.3s',
+                overflow: 'hidden',
+                position: 'relative'
+              }}
+            >
+              <style dangerouslySetInnerHTML={{ __html: site.custom_css }} />
+              <style dangerouslySetInnerHTML={{ __html: getHoverStylesCss() }} />
+              <style dangerouslySetInnerHTML={{ __html: `
+                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+                @keyframes slideDown { from { transform: translateY(-30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+                @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-15px); } }
+                @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+                @keyframes zoomIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+                @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+              ` }} />
 
-            {pages.length > 1 && (
-              <nav style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px', borderBottom: '1px solid rgba(0,0,0,0.06)', background: 'rgba(0,0,0,0.01)' }}>
-                <span style={{ fontWeight: 'bold', color: site.theme?.primaryColor || '#6366f1' }}>{site.name}</span>
-                <div style={{ display: 'flex', gap: '20px', fontSize: '14px' }}>
-                  {pages.map(p => (
-                    <span 
-                      key={p.id} 
-                      onClick={() => handleSwitchPage(p)}
-                      style={{ 
-                        fontWeight: activePage.id === p.id ? 'bold' : 'normal',
-                        borderBottom: activePage.id === p.id ? `2px solid ${site.theme?.primaryColor || '#6366f1'}` : 'none',
-                        paddingBottom: '2px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {p.title}
-                    </span>
-                  ))}
-                </div>
-              </nav>
-            )}
-
-            <div className="builder-canvas-wrapper" style={{ flex: 1, overflowY: 'auto', width: '100%', minHeight: '100%', position: 'relative' }}>
-              {activePage && activeLayout ? (
-                activeLayout.length === 0 ? (
-                  <div style={{ padding: '80px 20px', textAlign: 'center', color: '#64748b', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100%' }}>
-                    <Sparkles size={48} style={{ marginBottom: '16px', color: 'var(--primary)' }} />
-                    <h4 style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '20px' }}>Empty Canvas</h4>
-                    <p style={{ fontSize: '14px', maxWidth: '300px', margin: '0 auto 24px' }}>
-                      Your site has no sections. Click below to add a section to begin!
-                    </p>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <button onClick={handleAddSection} className="btn-primary" style={{ padding: '10px 20px', cursor: 'pointer' }}>+ Add Section</button>
-                    </div>
+              {pages.length > 1 && (
+                <nav style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px', borderBottom: '1px solid rgba(0,0,0,0.06)', background: 'rgba(0,0,0,0.01)' }}>
+                  <span style={{ fontWeight: 'bold', color: site.theme?.primaryColor || '#6366f1' }}>{site.name}</span>
+                  <div style={{ display: 'flex', gap: '20px', fontSize: '14px' }}>
+                    {pages.map(p => (
+                      <span
+                        key={p.id}
+                        onClick={() => handleSwitchPage(p)}
+                        style={{
+                          fontWeight: activePage.id === p.id ? 'bold' : 'normal',
+                          borderBottom: activePage.id === p.id ? `2px solid ${site.theme?.primaryColor || '#6366f1'}` : 'none',
+                          paddingBottom: '2px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {p.title}
+                      </span>
+                    ))}
                   </div>
-                ) : (
-                  activeLayout.map((sec, secIdx) => {
-                    const rawSecSettings = { ...sec.settings };
-                    // Remove backgroundColor from secStyles if it's not explicitly set or is transparent
-                    // so sections inherit the page background naturally
-                    const { containerWidth: _cw, backgroundColor: secBgColor, useGlobalBackground, ...otherSettings } = rawSecSettings || {};
-                    const containerWidth = _cw || '1200px';
-                    const secStyles = renderInlineStyles(otherSettings);
-                    // Only apply custom background if useGlobalBackground is explicitly false
-                    // Otherwise, section is transparent and inherits page background
-                    const sectionBg = (useGlobalBackground === false && secBgColor && secBgColor !== 'transparent' && secBgColor !== '') ? secBgColor : 'transparent';
+                </nav>
+              )}
 
-                    return (
-                      <section key={sec.id} style={{ position: 'relative', width: '100%', backgroundColor: sectionBg, ...secStyles }} className={isPreview ? '' : 'builder-canvas-section'}>
-                        {!isPreview && (
+              <div className="builder-canvas-wrapper" style={{ flex: 1, overflowY: 'auto', width: '100%', minHeight: '100%', position: 'relative' }}>
+                {activePage && activeLayout ? (
+                  activeLayout.length === 0 ? (
+                    <div style={{ padding: '80px 20px', textAlign: 'center', color: '#64748b', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100%' }}>
+                      <Sparkles size={48} style={{ marginBottom: '16px', color: 'var(--primary)' }} />
+                      <h4 style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '20px' }}>Empty Canvas</h4>
+                      <p style={{ fontSize: '14px', maxWidth: '300px', margin: '0 auto 24px' }}>
+                        Your site has no sections. Click below to add a section to begin!
+                      </p>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button onClick={handleAddSection} className="btn-primary" style={{ padding: '10px 20px', cursor: 'pointer' }}>+ Add Section</button>
+                      </div>
+                    </div>
+                  ) : (
+                    activeLayout.map((sec, secIdx) => {
+                      const rawSecSettings = { ...sec.settings };
+                      const { containerWidth: _cw, backgroundColor: secBgColor, useGlobalBackground, ...otherSettings } = rawSecSettings || {};
+                      const containerWidth = _cw || '1200px';
+                      const secStyles = renderInlineStyles(otherSettings);
+                      const sectionBg = (useGlobalBackground === false && secBgColor && secBgColor !== 'transparent' && secBgColor !== '') ? secBgColor : 'transparent';
+
+                      return (
+                        <section key={sec.id} style={{ position: 'relative', width: '100%', backgroundColor: sectionBg, ...secStyles }} className="builder-canvas-section">
                           <div style={{ position: 'absolute', top: '4px', left: '4px', zIndex: 40, display: 'flex', gap: '4px', background: 'rgba(15,23,42,0.85)', padding: '3px', borderRadius: '4px' }}>
                             <span style={{ fontSize: '10px', color: '#fff', padding: '2px 4px', background: 'var(--primary)', borderRadius: '2px', fontWeight: 'bold' }}>Section</span>
                             <button onClick={(e) => { e.stopPropagation(); handleDeleteSection(sec.id); }} style={{ padding: '2px', background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }} title="Delete Section"><Trash2 size={11} /></button>
                           </div>
-                        )}
-                        <div 
-                          className="builder-canvas-section-dropzone"
-                          onDragOver={(e) => { if (!isPreview) e.preventDefault(); }}
-                          onDrop={(e) => { if (!isPreview) { e.preventDefault(); handleDropElement(e, sec.id); } }}
-                          style={{ 
-                            maxWidth: containerWidth, 
-                            margin: '0 auto', 
-                            padding: '0 20px', 
-                            boxSizing: 'border-box',
-                            minHeight: '400px',
-                            position: 'relative',
-                            ...(showGridGuides && !isPreview ? {
-                              backgroundImage: 'linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px)',
-                              backgroundSize: snapToGrid > 0 ? `${snapToGrid}px ${snapToGrid}px` : '20px 20px'
-                            } : {})
-                          }}
-                        >
-                          {(sec.elements || []).map(el => renderCanvasElement(el))}
-                          {!isPreview && (sec.elements || []).length === 0 && (
-                            <div style={{ 
-                              padding: '40px 15px', 
-                              border: '2px dashed rgba(255,255,255,0.1)', 
-                              borderRadius: '8px', 
-                              textAlign: 'center', 
-                              color: '#64748b', 
-                              fontSize: '12px',
-                              position: 'absolute',
-                              top: '50%',
-                              left: '50%',
-                              transform: 'translate(-50%, -50%)',
-                              width: '80%'
-                            }}>
-                              Drop elements here or use the panel to add content
-                            </div>
-                          )}
-                        </div>
-                      </section>
-                    );
-                  })
-                )
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#fff', textAlign: 'center' }}>
-                  <p>No page selected. Please select or create a new page.</p>
-                  <button onClick={() => setShowNewPageModal(true)} style={{ marginTop: '15px', padding: '10px 20px', cursor: 'pointer', background: 'var(--primary)', border: 'none', color: 'white', borderRadius: '5px' }}>
-                    + Add New Page
-                  </button>
-                </div>
-              )}
+                          <div
+                            className="builder-canvas-section-dropzone"
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={(e) => { e.preventDefault(); handleDropElement(e, sec.id); }}
+                            style={{
+                              maxWidth: containerWidth,
+                              margin: '0 auto',
+                              padding: '0 20px',
+                              boxSizing: 'border-box',
+                              minHeight: '400px',
+                              position: 'relative',
+                              ...(showGridGuides ? {
+                                backgroundImage: 'linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px)',
+                                backgroundSize: snapToGrid > 0 ? `${snapToGrid}px ${snapToGrid}px` : '20px 20px'
+                              } : {})
+                            }}
+                          >
+                            {(sec.elements || []).map(el => renderCanvasElement(el))}
+                            {(sec.elements || []).length === 0 && (
+                              <div style={{
+                                padding: '40px 15px',
+                                border: '2px dashed rgba(255,255,255,0.1)',
+                                borderRadius: '8px',
+                                textAlign: 'center',
+                                color: '#64748b',
+                                fontSize: '12px',
+                                position: 'absolute',
+                                top: '50%', left: '50%',
+                                transform: 'translate(-50%, -50%)',
+                                width: '80%'
+                              }}>
+                                Drop elements here or use the panel to add content
+                              </div>
+                            )}
+                          </div>
+                        </section>
+                      );
+                    })
+                  )
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#fff', textAlign: 'center' }}>
+                    <p>No page selected. Please select or create a new page.</p>
+                    <button onClick={() => setShowNewPageModal(true)} style={{ marginTop: '15px', padding: '10px 20px', cursor: 'pointer', background: 'var(--primary)', border: 'none', color: 'white', borderRadius: '5px' }}>
+                      + Add New Page
+                    </button>
+                  </div>
+                )}
+              </div>
+
             </div>
 
+            {isLassoing && lassoStart && lassoEnd && (
+              <div style={{
+                position: 'absolute',
+                left: Math.min(lassoStart.x, lassoEnd.x),
+                top: Math.min(lassoStart.y, lassoEnd.y),
+                width: Math.abs(lassoStart.x - lassoEnd.x),
+                height: Math.abs(lassoStart.y - lassoEnd.y),
+                border: '1px dashed #6366f1',
+                backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                pointerEvents: 'none',
+                zIndex: 9999
+              }} />
+            )}
           </div>
-          
-          {isLassoing && lassoStart && lassoEnd && (
-            <div style={{
-              position: 'absolute',
-              left: Math.min(lassoStart.x, lassoEnd.x),
-              top: Math.min(lassoStart.y, lassoEnd.y),
-              width: Math.abs(lassoStart.x - lassoEnd.x),
-              height: Math.abs(lassoStart.y - lassoEnd.y),
-              border: '1px dashed #6366f1',
-              backgroundColor: 'rgba(99, 102, 241, 0.15)',
-              pointerEvents: 'none',
-              zIndex: 9999
-            }} />
-          )}
-        </div>
+        )}
+
 
         {!isPreview && (
           <aside className="glass" style={{ width: '320px', borderLeft: '1px solid var(--border)', padding: '20px', overflowY: 'auto', flexShrink: 0 }}>
@@ -3626,10 +3714,10 @@ function Builder() {
                 <p style={{ fontSize: '12px', lineHeight: '1.4' }}>
                   Select any element on the design canvas to configure content and styles here.
                   <br /><br />
-                  <strong>Tips:</strong>
-                  <br />• Hold <code>Ctrl</code> and click to multi-select
-                  <br />• Drag on canvas to lasso select
-                  <br />• Use <code>Ctrl+G</code> to group elements
+                  <strong>Quick Tips:</strong>
+                  <br />• Click + hold <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>Shift</span> to multi-select elements
+                  <br />• Drag on canvas to lasso select multiple items
+                  <br />• Use the toolbar above for instant actions
                 </p>
               </div>
             )}
@@ -4031,7 +4119,7 @@ function Builder() {
                     updateLayout(n);
                   })}
                   {sep}
-                  {menuItem('⧉', 'Duplicate (Ctrl+D)', () => handleDuplicateElement(contextMenu.elementId))}
+                  {menuItem('⧉', 'Duplicate Element', () => handleDuplicateElement(contextMenu.elementId))}
                   {menuItem('📋', 'Copy Styles', () => {
                     if (targetEl) setStyleClipboard({ type: targetEl.type, styles: JSON.parse(JSON.stringify(targetEl.styles || {})) });
                   })}
@@ -4041,7 +4129,7 @@ function Builder() {
                     updateLayout(n);
                   }, false, !styleClipboard || !targetEl || styleClipboard?.type !== targetEl?.type)}
                   {sep}
-                  {selectedElementIds.length > 1 && menuItem('🔗', `Group ${selectedElementIds.length} Elements (Ctrl+G)`, handleGroupElements)}
+                  {selectedElementIds.length > 1 && menuItem('🔗', `Group Elements`, handleGroupElements)}
                   {targetEl?.groupId && menuItem('🔓', 'Ungroup', handleUngroupElements)}
                   {sep}
                   {menuItem('🗑️', 'Delete Element', () => handleDeleteElement(contextMenu.elementId), true)}
