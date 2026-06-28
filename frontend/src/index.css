@@ -212,18 +212,28 @@ h1, h2, h3, h4, h5 {
 /* Layout Builder Overlay styling */
 .builder-canvas-section {
   position: relative;
-  border: 2px solid transparent;
+  border: 1px dashed transparent;
   transition: border-color 0.2s;
 }
 .builder-canvas-section:hover {
-  border-color: var(--primary);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+.section-overlay-controls {
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+  pointer-events: none;
+}
+.builder-canvas-section:hover .section-overlay-controls {
+  opacity: 1;
+  pointer-events: auto;
 }
 .builder-canvas-row {
   position: relative;
   border: 1px dashed transparent;
+  transition: border-color 0.2s;
 }
 .builder-canvas-row:hover {
-  border-color: var(--accent);
+  border-color: rgba(16, 185, 129, 0.3);
 }
 .builder-canvas-element {
   position: relative;

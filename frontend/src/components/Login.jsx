@@ -76,7 +76,7 @@ const res = await fetch('http://127.0.0.1:8000/api/auth/login/', { // الراب
       }}>
         <div style={{ textAlign: 'center', marginBottom: '30px' }}>
           <span style={{ fontSize: '48px' }}>🛠️</span>
-          <h2 style={{ fontSize: '28px', marginTop: '10px', color: '#fff' }}>Antigravity Web</h2>
+          <h2 style={{ fontSize: '28px', marginTop: '10px', color: '#fff' }}>Web Builder</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '5px' }}>
             Build stunning sites visually
           </p>
@@ -143,20 +143,6 @@ const res = await fetch('http://127.0.0.1:8000/api/auth/login/', { // الراب
           </Link>
         </div>
 
-        <div style={{
-          marginTop: '30px',
-          padding: '15px',
-          backgroundColor: 'rgba(255,255,255,0.02)',
-          borderRadius: 'var(--radius-sm)',
-          fontSize: '12px',
-          color: 'var(--text-muted)',
-          textAlign: 'left',
-          border: '1px dashed var(--border)'
-        }}>
-          <strong>Demo credentials:</strong>
-          <div style={{ marginTop: '5px' }}>👨‍💻 User Dashboard: <code>user</code> / <code>password123</code></div>
-          <div style={{ marginTop: '3px' }}>👑 Admin Dashboard: <code>admin</code> / <code>password123</code></div>
-        </div>
       </div>
     </div>
   );

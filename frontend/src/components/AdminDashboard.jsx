@@ -12,15 +12,13 @@ function AdminDashboard() {
 
 const fetchSites = async () => {
     try {
-      // 1. جلب الـ access token المخزن في المتصفح أثناء تسجيل الدخول الناجح
       const token = localStorage.getItem('access_token'); 
       
-      // 2. توجيه الطلب إلى بورت الباك إند (8000) بدلاً من (5173) وإرفاق التوكن
       const res = await fetch('http://127.0.0.1:8000/api/admin/sites/', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // 🔥 هذا السطر الذي يثبت لدجانغو أنك الأدمن
+          'Authorization': `Bearer ${token}`
         }
       });
 
@@ -52,7 +50,7 @@ const handleToggleStatus = async (siteId) => {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // 🔥 حماية وتأكيد صلاحيات الأدمن عند التعديل
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ site_id: siteId })
       });
@@ -75,7 +73,6 @@ const handleToggleStatus = async (siteId) => {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: 'var(--bg-dark)' }}>
-      {/* Admin Topbar */}
       <header className="glass" style={{
         display: 'flex',
         justifyContent: 'space-between',
@@ -115,7 +112,6 @@ const handleToggleStatus = async (siteId) => {
         </div>
       </header>
 
-      {/* Main Admin Section */}
       <main style={{ padding: '40px', maxWidth: '1200px', margin: '0 auto' }}>
         <div style={{ marginBottom: '30px' }}>
           <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '8px' }}>Websites Listing</h2>

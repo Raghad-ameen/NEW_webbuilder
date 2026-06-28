@@ -61,7 +61,7 @@ function Signup() {
       }}>
         <div style={{ textAlign: 'center', marginBottom: '30px' }}>
           <span style={{ fontSize: '48px' }}>🛠️</span>
-          <h2 style={{ fontSize: '28px', marginTop: '10px', color: '#fff' }}>Antigravity Web</h2>
+          <h2 style={{ fontSize: '28px', marginTop: '10px', color: '#fff' }}>Web Builder</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '5px' }}>
             Create your builder account
           </p>
