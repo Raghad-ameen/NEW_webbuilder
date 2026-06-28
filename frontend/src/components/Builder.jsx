@@ -6,7 +6,7 @@ import {
   Copy, Settings, Palette, FileCode, Layers, CheckCircle, RefreshCw, Sparkles, Mail,
   ClipboardCopy, ClipboardPaste, AlignLeft, AlignCenter, AlignRight,
   AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
-  Move, Group, Ungroup
+  Move, Group, Ungroup, Download
 } from 'lucide-react';
 import { TEMPLATES } from '../utils/TemplateData';
 import { Rnd } from 'react-rnd';
@@ -1331,7 +1331,8 @@ function Builder() {
       settings: {
         paddingTop: '60',
         paddingBottom: '60',
-        containerWidth: '1200px'
+        containerWidth: '1200px',
+        useGlobalBackground: true
       },
       elements: []
     };
@@ -1387,7 +1388,12 @@ function Builder() {
             {
               id: `sec_${Date.now()}`,
               type: 'section',
-              settings: { paddingTop: '60', paddingBottom: '60', containerWidth: '1200px' },
+              settings: { 
+                paddingTop: '60', 
+                paddingBottom: '60', 
+                containerWidth: '1200px',
+                useGlobalBackground: true 
+              },
               elements: [{
                 id: `el_init_${Date.now()}`,
                 type: 'heading',
@@ -2147,100 +2153,114 @@ function Builder() {
           </div>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'nowrap' }}>
           {!isPreview && (
             <>
-              <button onClick={handleUndo} disabled={historyPointer <= 0} className="btn-secondary" style={{ padding: '8px 12px', opacity: historyPointer <= 0 ? 0.4 : 1 }} title="Undo (Ctrl+Z)">Undo</button>
-              <button onClick={handleRedo} disabled={historyPointer >= history.length - 1} className="btn-secondary" style={{ padding: '8px 12px', opacity: historyPointer >= history.length - 1 ? 0.4 : 1 }} title="Redo (Ctrl+Y)">Redo</button>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', padding: '4px 8px', borderRadius: '4px' }}>
-                <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold', whiteSpace: 'nowrap' }}>⊞ Snap:</span>
-                <select
-                  value={snapToGrid}
-                  onChange={(e) => setSnapToGrid(parseInt(e.target.value))}
-                  style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '11px', cursor: 'pointer', outline: 'none' }}
-                >
-                  <option value={0} style={{ background: '#1e293b' }}>Off</option>
-                  <option value={5} style={{ background: '#1e293b' }}>5px</option>
-                  <option value={10} style={{ background: '#1e293b' }}>10px</option>
-                  <option value={20} style={{ background: '#1e293b' }}>20px</option>
-                </select>
+              {/* History Controls */}
+              <div style={{ display: 'flex', gap: '2px', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}>
+                <button onClick={handleUndo} disabled={historyPointer <= 0} className="btn-secondary" style={{ padding: '6px 10px', opacity: historyPointer <= 0 ? 0.4 : 1 }} title="Undo (Ctrl+Z)">
+                  <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
+                </button>
+                <button onClick={handleRedo} disabled={historyPointer >= history.length - 1} className="btn-secondary" style={{ padding: '6px 10px', opacity: historyPointer >= history.length - 1 ? 0.4 : 1 }} title="Redo (Ctrl+Y)">
+                  <RefreshCw size={14} />
+                </button>
               </div>
 
-              <button 
-                onClick={() => setShowGridGuides(!showGridGuides)} 
-                className="btn-secondary" 
-                style={{ 
-                  padding: '8px 12px', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '4px',
-                  background: showGridGuides ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
-                  border: showGridGuides ? 'none' : '1px solid rgba(255,255,255,0.08)'
-                }} 
-                title="Toggle Grid Alignment Guides"
-              >
-                🌐 Grid Guides: {showGridGuides ? 'On' : 'Off'}
-              </button>
-              
-              {selectedElementIds.length > 1 && (
-                <button onClick={handleGroupElements} className="btn-secondary" style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '4px' }} title="Group Selected (Ctrl+G)">
-                  <Group size={14} /> Group
+              {/* Grid & Snap Controls */}
+              <div style={{ display: 'flex', gap: '2px', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '0 6px' }}>
+                  <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold', whiteSpace: 'nowrap' }}>⊞ Snap:</span>
+                  <select
+                    value={snapToGrid}
+                    onChange={(e) => setSnapToGrid(parseInt(e.target.value))}
+                    style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '10px', cursor: 'pointer', outline: 'none', padding: '2px' }}
+                  >
+                    <option value={0} style={{ background: '#1e293b' }}>Off</option>
+                    <option value={5} style={{ background: '#1e293b' }}>5px</option>
+                    <option value={10} style={{ background: '#1e293b' }}>10px</option>
+                    <option value={20} style={{ background: '#1e293b' }}>20px</option>
+                  </select>
+                </div>
+                <button 
+                  onClick={() => setShowGridGuides(!showGridGuides)} 
+                  className="btn-secondary" 
+                  style={{ 
+                    padding: '6px 8px', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '3px',
+                    background: showGridGuides ? 'var(--primary)' : 'transparent',
+                    fontSize: '10px'
+                  }} 
+                  title="Toggle Grid Alignment Guides"
+                >
+                  🌐
                 </button>
-              )}
-              
-              {selectedElementIds.length > 0 && (() => {
-                const hasGrouped = selectedElementIds.some(id => findElementInLayout(id)?.element?.groupId);
-                return hasGrouped ? (
-                  <button onClick={handleUngroupElements} className="btn-secondary" style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '4px' }} title="Ungroup Selected">
-                    <Ungroup size={14} /> Ungroup
-                  </button>
-                ) : null;
-              })()}
-              
-              {selectedElementIds.length > 0 && (
-                <>
-                  <button onClick={handleCopy} className="btn-secondary" style={{ padding: '8px 12px' }} title="Copy (Ctrl+C)">
-                    <ClipboardCopy size={14} />
-                  </button>
-                  <button onClick={handlePaste} className="btn-secondary" style={{ padding: '8px 12px', opacity: clipboard ? 1 : 0.4 }} disabled={!clipboard} title="Paste (Ctrl+V)">
-                    <ClipboardPaste size={14} />
-                  </button>
-                  <button onClick={handleDeleteSelected} className="btn-secondary" style={{ padding: '8px 12px', color: '#ff4d4d' }} title="Delete (Del)">
-                    <Trash2 size={14} />
-                  </button>
-                </>
-              )}
-              
+              </div>
+
+              {/* Selection Tools */}
               {selectedElementIds.length > 0 && (
                 <div style={{ display: 'flex', gap: '2px', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}>
-                  <button onClick={() => alignElements('left')} className="btn-secondary" style={{ padding: '4px 8px' }} title="Align Left"><AlignLeft size={12} /></button>
-                  <button onClick={() => alignElements('center')} className="btn-secondary" style={{ padding: '4px 8px' }} title="Align Center"><AlignCenter size={12} /></button>
-                  <button onClick={() => alignElements('right')} className="btn-secondary" style={{ padding: '4px 8px' }} title="Align Right"><AlignRight size={12} /></button>
-                  <button onClick={() => alignElements('top')} className="btn-secondary" style={{ padding: '4px 8px' }} title="Align Top"><AlignVerticalJustifyStart size={12} /></button>
-                  <button onClick={() => alignElements('middle')} className="btn-secondary" style={{ padding: '4px 8px' }} title="Align Middle"><AlignVerticalJustifyCenter size={12} /></button>
-                  <button onClick={() => alignElements('bottom')} className="btn-secondary" style={{ padding: '4px 8px' }} title="Align Bottom"><AlignVerticalJustifyEnd size={12} /></button>
+                  {selectedElementIds.length > 1 && (
+                    <button onClick={handleGroupElements} className="btn-secondary" style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', gap: '3px' }} title="Group Selected (Ctrl+G)">
+                      <Group size={13} />
+                    </button>
+                  )}
+                  {(() => {
+                    const hasGrouped = selectedElementIds.some(id => findElementInLayout(id)?.element?.groupId);
+                    return hasGrouped ? (
+                      <button onClick={handleUngroupElements} className="btn-secondary" style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', gap: '3px' }} title="Ungroup Selected">
+                        <Ungroup size={13} />
+                      </button>
+                    ) : null;
+                  })()}
+                  <button onClick={handleCopy} className="btn-secondary" style={{ padding: '6px 8px' }} title="Copy (Ctrl+C)">
+                    <ClipboardCopy size={13} />
+                  </button>
+                  <button onClick={handlePaste} className="btn-secondary" style={{ padding: '6px 8px', opacity: clipboard ? 1 : 0.4 }} disabled={!clipboard} title="Paste (Ctrl+V)">
+                    <ClipboardPaste size={13} />
+                  </button>
+                  <button onClick={handleDeleteSelected} className="btn-secondary" style={{ padding: '6px 8px', color: '#ff4d4d' }} title="Delete (Del)">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              )}
+
+              {/* Alignment Tools */}
+              {selectedElementIds.length > 0 && (
+                <div style={{ display: 'flex', gap: '1px', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}>
+                  <button onClick={() => alignElements('left')} className="btn-secondary" style={{ padding: '5px 7px' }} title="Align Left"><AlignLeft size={12} /></button>
+                  <button onClick={() => alignElements('center')} className="btn-secondary" style={{ padding: '5px 7px' }} title="Align Center"><AlignCenter size={12} /></button>
+                  <button onClick={() => alignElements('right')} className="btn-secondary" style={{ padding: '5px 7px' }} title="Align Right"><AlignRight size={12} /></button>
+                  <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)', margin: '2px 2px' }}></div>
+                  <button onClick={() => alignElements('top')} className="btn-secondary" style={{ padding: '5px 7px' }} title="Align Top"><AlignVerticalJustifyStart size={12} /></button>
+                  <button onClick={() => alignElements('middle')} className="btn-secondary" style={{ padding: '5px 7px' }} title="Align Middle"><AlignVerticalJustifyCenter size={12} /></button>
+                  <button onClick={() => alignElements('bottom')} className="btn-secondary" style={{ padding: '5px 7px' }} title="Align Bottom"><AlignVerticalJustifyEnd size={12} /></button>
                 </div>
               )}
             </>
           )}
           
+          {/* Separator */}
+          <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)', margin: '0 4px' }}></div>
+
+          {/* Main Actions */}
           <button 
             onClick={saveLayout} 
             disabled={isSaving}
             className="btn-primary" 
-            style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', opacity: isSaving ? 0.7 : 1 }}
+            style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '5px', opacity: isSaving ? 0.7 : 1, fontSize: '12px' }}
           >
-            {isSaving ? '⏳ Saving...' : 'Save'}
+            {isSaving ? '⏳ Saving...' : <><Save size={14} /> Save</>}
           </button>
 
           <button 
             onClick={exportProjectToDevice}
             className="btn-secondary" 
-            style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+            style={{ padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
             title="Download project as ZIP archive"
           >
-            ⬇ Export ZIP
+            <Download size={14} /> Export
           </button>
 
           <button 
@@ -2251,23 +2271,27 @@ function Builder() {
               }
             }} 
             className="btn-secondary" 
-            style={{ padding: '8px 14px' }}
+            style={{ padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
           >
-            {isPreview ? <><EyeOff size={15} /> Edit Workspace</> : <><Eye size={15} /> Live Preview</>}
+            {isPreview ? <><EyeOff size={14} /> Edit</> : <><Eye size={14} /> Preview</>}
           </button>
           
+          {/* Separator */}
+          <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)', margin: '0 4px' }}></div>
+
+          {/* Publish Controls */}
           {site.is_published ? (
-            <div style={{ display: 'flex', gap: '4px' }}>
-              <button onClick={() => handlePublishToggle(false)} className="btn-secondary" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>
+            <div style={{ display: 'flex', gap: '2px', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}>
+              <button onClick={() => handlePublishToggle(false)} className="btn-secondary" style={{ padding: '6px 10px', fontSize: '12px', color: 'var(--danger)' }}>
                 Unpublish
               </button>
-              <button onClick={() => setShowPublishModal(true)} className="btn-primary" style={{ background: 'var(--accent)' }}>
-                <Globe size={15} /> View Link
+              <button onClick={() => setShowPublishModal(true)} className="btn-primary" style={{ padding: '6px 10px', fontSize: '12px', background: 'var(--accent)' }}>
+                <Globe size={14} /> View
               </button>
             </div>
           ) : (
-            <button onClick={() => handlePublishToggle(true)} className="btn-primary" style={{ background: 'var(--primary)' }}>
-              Publish Live
+            <button onClick={() => handlePublishToggle(true)} className="btn-primary" style={{ padding: '6px 12px', fontSize: '12px', background: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Globe size={14} /> Publish
             </button>
           )}
         </div>
@@ -2789,11 +2813,12 @@ function Builder() {
                     const rawSecSettings = { ...sec.settings };
                     // Remove backgroundColor from secStyles if it's not explicitly set or is transparent
                     // so sections inherit the page background naturally
-                    const { containerWidth: _cw, backgroundColor: secBgColor, ...otherSettings } = rawSecSettings || {};
+                    const { containerWidth: _cw, backgroundColor: secBgColor, useGlobalBackground, ...otherSettings } = rawSecSettings || {};
                     const containerWidth = _cw || '1200px';
                     const secStyles = renderInlineStyles(otherSettings);
-                    // Only apply background if explicitly set (not default/transparent)
-                    const sectionBg = secBgColor && secBgColor !== 'transparent' && secBgColor !== '' ? secBgColor : 'transparent';
+                    // Only apply custom background if useGlobalBackground is explicitly false
+                    // Otherwise, section is transparent and inherits page background
+                    const sectionBg = (useGlobalBackground === false && secBgColor && secBgColor !== 'transparent' && secBgColor !== '') ? secBgColor : 'transparent';
 
                     return (
                       <section key={sec.id} style={{ position: 'relative', width: '100%', backgroundColor: sectionBg, ...secStyles }} className={isPreview ? '' : 'builder-canvas-section'}>
