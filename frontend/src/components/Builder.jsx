@@ -11,6 +11,7 @@ import {
 import { TEMPLATES } from '../utils/TemplateData';
 import { Rnd } from 'react-rnd';
 import JSZip from 'jszip';
+import { getSmartComponentTypes, getSmartComponent, calculateGroupBounds, moveElementGroup } from '../utils/SmartComponents';
 
 function Builder() {
   const { siteId } = useParams();
@@ -930,7 +931,7 @@ function Builder() {
           headers['Authorization'] = `Bearer ${token}`;
         }
 
-        await fetch(`/api/pages/${activePage.id}/`, {
+        await fetch(`http://127.0.0.1:8000/api/pages/${activePage.id}/`, {
           method: 'PATCH',
           headers: headers,
           body: JSON.stringify({ 
@@ -1256,7 +1257,7 @@ function Builder() {
       nextLayout.push({
         id: `sec_${Date.now()}`,
         type: 'section',
-        settings: { paddingTop: '60', paddingBottom: '60', containerWidth: '1200px' },
+        settings: { paddingTop: '120', paddingBottom: '120', containerWidth: '1200px', minHeight: '600px' },
         elements: []
       });
     }
@@ -1277,6 +1278,55 @@ function Builder() {
     setSelectedElementId(newEl.id);
   };
 
+  const handleAddSmartComponent = (componentType) => {
+    const smartComponent = getSmartComponent(componentType);
+    if (!smartComponent) return;
+
+    const generatedElements = smartComponent.generateElements(activeLayout[0]?.id, pages);
+    
+    let nextLayout = [...activeLayout];
+    if (nextLayout.length === 0) {
+      nextLayout.push({
+        id: `sec_${Date.now()}`,
+        type: 'section',
+        settings: { ...smartComponent.defaultStyles, containerWidth: '1200px' },
+        elements: []
+      });
+    }
+
+    // Apply default section styles if provided
+    if (smartComponent.defaultStyles && Object.keys(smartComponent.defaultStyles).length > 0) {
+      const targetSec = nextLayout[nextLayout.length - 1];
+      nextLayout = nextLayout.map(sec => {
+        if (sec.id === targetSec.id) {
+          return {
+            ...sec,
+            settings: { ...sec.settings, ...smartComponent.defaultStyles }
+          };
+        }
+        return sec;
+      });
+    }
+
+    // Add generated elements to the last section
+    const targetSec = nextLayout[nextLayout.length - 1];
+    nextLayout = nextLayout.map(sec => {
+      if (sec.id === targetSec.id) {
+        return {
+          ...sec,
+          elements: [...(sec.elements || []), ...generatedElements]
+        };
+      }
+      return sec;
+    });
+
+    updateLayout(nextLayout);
+    // Select the first element of the smart component
+    if (generatedElements.length > 0) {
+      setSelectedElementId(generatedElements[0].id);
+    }
+  };
+
   const handleDropElement = (e, sectionId) => {
     const type = e.dataTransfer.getData("elementType");
     if (!type) return;
@@ -1285,6 +1335,40 @@ function Builder() {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    // Handle Smart Components
+    if (type.startsWith('smart-')) {
+      const componentType = type.replace('smart-', '');
+      const smartComponent = getSmartComponent(componentType);
+      if (!smartComponent) return;
+
+      const generatedElements = smartComponent.generateElements(sectionId, pages);
+      
+      // Apply section styles from smart component
+      const nextLayout = activeLayout.map(sec => {
+        if (sec.id === sectionId && smartComponent.defaultStyles) {
+          return {
+            ...sec,
+            settings: { ...sec.settings, ...smartComponent.defaultStyles },
+            elements: [...(sec.elements || []), ...generatedElements]
+          };
+        }
+        if (sec.id === sectionId) {
+          return {
+            ...sec,
+            elements: [...(sec.elements || []), ...generatedElements]
+          };
+        }
+        return sec;
+      });
+
+      updateLayout(nextLayout);
+      if (generatedElements.length > 0) {
+        setSelectedElementId(generatedElements[0].id);
+      }
+      return;
+    }
+
+    // Handle regular elements
     const defaultElements = {
       heading: {
         type: 'heading',
@@ -1368,10 +1452,11 @@ function Builder() {
       id: secId,
       type: 'section',
       settings: {
-        paddingTop: '60',
-        paddingBottom: '60',
+        paddingTop: '120',
+        paddingBottom: '120',
         containerWidth: '1200px',
-        useGlobalBackground: true
+        useGlobalBackground: true,
+        minHeight: '600px'
       },
       elements: []
     };
@@ -1413,7 +1498,7 @@ function Builder() {
     
     try {
       const token = localStorage.getItem('access_token'); 
-      const res = await fetch('/api/pages/', {
+      const res = await fetch('http://127.0.0.1:8000/api/pages/', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -1428,10 +1513,11 @@ function Builder() {
               id: `sec_${Date.now()}`,
               type: 'section',
               settings: { 
-                paddingTop: '60', 
-                paddingBottom: '60', 
+                paddingTop: '120', 
+                paddingBottom: '120', 
                 containerWidth: '1200px',
-                useGlobalBackground: true 
+                useGlobalBackground: true,
+                minHeight: '600px'
               },
               elements: [{
                 id: `el_init_${Date.now()}`,
@@ -1763,8 +1849,6 @@ function Builder() {
           }}
           disableDragging={isPreview}
           enableResizing={!isPreview}
-          bounds="parent"
-          maxWidth={1200}
           dragGrid={snapToGrid > 0 ? [snapToGrid, snapToGrid] : [1,1]}
           resizeGrid={snapToGrid > 0 ? [snapToGrid, snapToGrid] : [1,1]}
           onDragStart={(e, d) => {
@@ -2080,6 +2164,12 @@ function Builder() {
   }
 
   const getCanvasWidth = () => {
+    if (viewMode === 'mobile') return '375px';
+    if (viewMode === 'tablet') return '768px';
+    return '100%';
+  };
+
+  const getPreviewWidth = () => {
     if (viewMode === 'mobile') return '375px';
     if (viewMode === 'tablet') return '768px';
     return '100%';
@@ -2482,6 +2572,29 @@ function Builder() {
                     </button>
                   </div>
 
+                  {/* Smart Components Section */}
+                  <h3 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '10px', borderTop: '1px solid var(--border)', paddingTop: '15px', color: 'var(--primary)' }}>
+                    🧩 Smart Components
+                  </h3>
+                  <p style={{ fontSize: '10px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                    Pre-built layout blocks. Drag to add to canvas.
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '25px' }}>
+                    {getSmartComponentTypes().map(comp => (
+                      <button
+                        key={comp.type}
+                        draggable
+                        onDragStart={(e) => e.dataTransfer.setData("elementType", `smart-${comp.type}`)}
+                        onClick={() => handleAddSmartComponent(comp.type)}
+                        className="btn-secondary"
+                        style={{ flexDirection: 'column', height: '80px', padding: '10px', fontSize: '11px', cursor: 'grab', border: '1px solid var(--primary-glow)' }}
+                      >
+                        <span style={{ fontSize: '20px', marginBottom: '4px' }}>{comp.icon}</span>
+                        <span style={{ fontWeight: '600' }}>{comp.label}</span>
+                      </button>
+                    ))}
+                  </div>
+
                   <h3 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '10px', borderTop: '1px solid var(--border)', paddingTop: '15px' }}>Add Section</h3>
                   <button onClick={handleAddSection} className="btn-secondary" style={{ fontSize: '12px', justifyContent: 'flex-start', width: '100%' }}>
                     <Plus size={16} /> + Add New Section
@@ -2775,48 +2888,36 @@ function Builder() {
         {isPreview ? (
           /* ===== TRUE FULL-SCREEN IFRAME PREVIEW ===== */
           /* Renders the exact compiled HTML that gets deployed — pixel-perfect, real fonts, hover effects, animations */
-          <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
-            {/* Slim page-switcher bar */}
-            {pages.length > 1 && (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '6px',
-                padding: '6px 16px', background: 'rgba(10,12,20,0.95)',
-                borderBottom: '1px solid rgba(255,255,255,0.06)',
-                flexShrink: 0, overflowX: 'auto',
-              }}>
-                <span style={{ fontSize: '10px', color: '#475569', fontWeight: '600', marginRight: '4px', flexShrink: 0 }}>PAGES</span>
-                {pages.map(p => (
-                  <button
-                    key={p.id}
-                    onClick={() => handleSwitchPage(p)}
-                    style={{
-                      padding: '3px 12px', borderRadius: '20px', border: 'none', cursor: 'pointer',
-                      background: activePage?.id === p.id ? 'var(--primary)' : 'rgba(255,255,255,0.06)',
-                      color: activePage?.id === p.id ? '#fff' : '#64748b',
-                      fontSize: '11px', fontWeight: '500', flexShrink: 0,
-                    }}
-                  >
-                    {p.title}
-                  </button>
-                ))}
-                <div style={{ flex: 1 }} />
-                <span style={{ fontSize: '10px', color: '#334155', fontStyle: 'italic' }}>
-                  This is an exact preview of the published site
-                </span>
-              </div>
-            )}
-            <iframe
-              key={`preview-${activePage?.id}-${JSON.stringify(activeLayout).length}`}
-              srcDoc={compileToStaticHtml({ ...activePage, layout: activeLayout }, site, pages, viewMode)}
-              style={{
-                flex: 1,
-                width: '100%',
-                border: 'none',
-                background: getPageBgColor(),
-              }}
-              title="Live Preview"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-            />
+          <div style={{ 
+            flexGrow: 1, 
+            display: 'flex', 
+            flexDirection: 'column', 
+            overflow: 'hidden', 
+            position: 'relative', 
+            background: getPageBgColor(),
+            alignItems: 'center'
+          }}>
+            <div style={{
+              width: getPreviewWidth(),
+              maxWidth: '100%',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              <iframe
+                key={`preview-${activePage?.id}-${JSON.stringify(activeLayout).length}-${viewMode}`}
+                srcDoc={compileToStaticHtml({ ...activePage, layout: activeLayout }, site, pages, viewMode)}
+                style={{
+                  flex: 1,
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
+                  background: getPageBgColor(),
+                }}
+                title="Live Preview"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              />
+            </div>
           </div>
         ) : (
           /* ===== EDITOR CANVAS ===== */
@@ -2850,7 +2951,7 @@ function Builder() {
                 borderRadius: 'var(--radius-md)',
                 border: '2px solid var(--border)',
                 transition: 'width 0.3s ease-in-out, border-radius 0.3s',
-                overflow: 'hidden',
+                overflow: 'visible',
                 position: 'relative'
               }}
             >
@@ -2910,11 +3011,7 @@ function Builder() {
                       const sectionBg = (useGlobalBackground === false && secBgColor && secBgColor !== 'transparent' && secBgColor !== '') ? secBgColor : 'transparent';
 
                       return (
-                        <section key={sec.id} style={{ position: 'relative', width: '100%', backgroundColor: sectionBg, ...secStyles }} className="builder-canvas-section">
-                          <div style={{ position: 'absolute', top: '4px', left: '4px', zIndex: 40, display: 'flex', gap: '4px', background: 'rgba(15,23,42,0.85)', padding: '3px', borderRadius: '4px' }}>
-                            <span style={{ fontSize: '10px', color: '#fff', padding: '2px 4px', background: 'var(--primary)', borderRadius: '2px', fontWeight: 'bold' }}>Section</span>
-                            <button onClick={(e) => { e.stopPropagation(); handleDeleteSection(sec.id); }} style={{ padding: '2px', background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }} title="Delete Section"><Trash2 size={11} /></button>
-                          </div>
+                        <section key={sec.id} style={{ width: '100%', backgroundColor: sectionBg, ...secStyles, overflow: 'visible' }} className="builder-canvas-section">
                           <div
                             className="builder-canvas-section-dropzone"
                             onDragOver={(e) => e.preventDefault()}
@@ -2924,8 +3021,8 @@ function Builder() {
                               margin: '0 auto',
                               padding: '0 20px',
                               boxSizing: 'border-box',
-                              minHeight: '400px',
                               position: 'relative',
+                              overflow: 'visible',
                               ...(showGridGuides ? {
                                 backgroundImage: 'linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px)',
                                 backgroundSize: snapToGrid > 0 ? `${snapToGrid}px ${snapToGrid}px` : '20px 20px'
