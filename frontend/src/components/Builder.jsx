@@ -930,6 +930,13 @@ function Builder() {
       setHistory(newHistory);
       setHistoryPointer(newHistory.length - 1);
     }
+    
+    // Sync local cache to prevent data loss when switching pages
+    setPages(prevPages => prevPages.map(p => 
+      p.id === activePage?.id ? { ...p, layout: newLayout } : p
+    ));
+    setActivePage(prev => prev ? { ...prev, layout: newLayout } : prev);
+
     savePageLayout(newLayout);
   };
 
@@ -1392,21 +1399,26 @@ function Builder() {
       heading: {
         type: 'heading',
         content: { tag: 'h2', text: 'New Heading Segment' },
+        width: 400,
         styles: { fontSize: '32', color: '#ffffff', marginBottom: '15' }
       },
       text: {
         type: 'text',
         content: { text: 'Write your rich paragraph details here. Click style settings to configure background, padding, and size.' },
+        width: 500,
         styles: { fontSize: '15', color: '#cbd5e1', marginBottom: '15', lineHeight: '1.6' }
       },
       button: {
         type: 'button',
         content: { text: 'Click Action', link: '#' },
+        width: 150,
         styles: { backgroundColor: '#6366f1', color: '#ffffff', padding: '10 20', borderRadius: '6', fontWeight: 'bold' }
       },
       image: {
         type: 'image',
         content: { src: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80', alt: 'Visual Graphic' },
+        width: 600,
+        height: 400,
         styles: { borderRadius: '6', marginBottom: '15' }
       },
       video: {
@@ -1855,6 +1867,7 @@ function Builder() {
     };
 
     const wrapWithRnd = (elementInnerContent, inlineStyles = {}) => {
+      const handleStyle = isSelected && !isPreview ? { width: '10px', height: '10px', background: '#fff', border: '1px solid #6366f1', borderRadius: '2px', zIndex: 100 } : { display: 'none' };
       return (
         <Rnd
           key={`${el.id}_${isPreview}`}
@@ -1870,6 +1883,17 @@ function Builder() {
           enableResizing={!isPreview}
           dragGrid={snapToGrid > 0 ? [snapToGrid, snapToGrid] : [1,1]}
           resizeGrid={snapToGrid > 0 ? [snapToGrid, snapToGrid] : [1,1]}
+          cancel=".element-overlay-controls"
+          resizeHandleStyles={{
+            bottomRight: { ...handleStyle, right: '-5px', bottom: '-5px', cursor: 'nwse-resize' },
+            bottomLeft: { ...handleStyle, left: '-5px', bottom: '-5px', cursor: 'nesw-resize' },
+            topRight: { ...handleStyle, right: '-5px', top: '-5px', cursor: 'nesw-resize' },
+            topLeft: { ...handleStyle, left: '-5px', top: '-5px', cursor: 'nwse-resize' },
+            left: { ...handleStyle, left: '-5px', top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
+            right: { ...handleStyle, right: '-5px', top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
+            top: { ...handleStyle, top: '-5px', left: '50%', transform: 'translateX(-50%)', cursor: 'ns-resize' },
+            bottom: { ...handleStyle, bottom: '-5px', left: '50%', transform: 'translateX(-50%)', cursor: 'ns-resize' },
+          }}
           onDragStart={(e, d) => {
             if (selectedElementIds.includes(el.id)) {
               const positions = {};
@@ -1974,8 +1998,8 @@ function Builder() {
             position: 'absolute',
             display: 'inline-block',
             zIndex: isSelected ? 50 : 10,
-            outline: isSelected && !isPreview ? '1px dashed #6366f1' : 'none',
-            outlineOffset: '-1px',
+            outline: isSelected && !isPreview ? '2px dashed rgba(99, 102, 241, 0.5)' : 'none',
+            outlineOffset: '2px',
             ...inlineStyles,
             ...getAnimationStyles(el)
           }}
@@ -2971,7 +2995,9 @@ function Builder() {
                 border: '2px solid var(--border)',
                 transition: 'width 0.3s ease-in-out, border-radius 0.3s',
                 overflow: 'visible',
-                position: 'relative'
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column'
               }}
             >
               <style dangerouslySetInnerHTML={{ __html: site.custom_css }} />
@@ -3008,7 +3034,7 @@ function Builder() {
                 </nav>
               )}
 
-              <div className="builder-canvas-wrapper" style={{ flex: 1, overflowY: 'auto', width: '100%', minHeight: '100%', position: 'relative' }}>
+              <div className="builder-canvas-wrapper" style={{ flex: 1, overflowY: 'auto', width: '100%', minHeight: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>
                 {activePage && activeLayout ? (
                   activeLayout.length === 0 ? (
                     <div style={{ padding: '80px 20px', textAlign: 'center', color: '#64748b', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100%' }}>
@@ -3030,7 +3056,7 @@ function Builder() {
                       const sectionBg = (useGlobalBackground === false && secBgColor && secBgColor !== 'transparent' && secBgColor !== '') ? secBgColor : 'transparent';
 
                       return (
-                        <section key={sec.id} style={{ width: '100%', backgroundColor: sectionBg, ...secStyles, overflow: 'visible' }} className="builder-canvas-section">
+                        <section key={sec.id} style={{ width: '100%', backgroundColor: sectionBg, ...secStyles, overflow: 'visible', display: 'flex', flexDirection: 'column', flexGrow: 1 }} className="builder-canvas-section">
                           <div
                             className="builder-canvas-section-dropzone"
                             onDragOver={(e) => e.preventDefault()}
@@ -3042,6 +3068,9 @@ function Builder() {
                               boxSizing: 'border-box',
                               position: 'relative',
                               overflow: 'visible',
+                              flexGrow: 1,
+                              width: '100%',
+                              minHeight: '200px',
                               ...(showGridGuides ? {
                                 backgroundImage: 'linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px)',
                                 backgroundSize: snapToGrid > 0 ? `${snapToGrid}px ${snapToGrid}px` : '20px 20px'
