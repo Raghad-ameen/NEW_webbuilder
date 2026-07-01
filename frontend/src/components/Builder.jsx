@@ -204,6 +204,19 @@ function Builder() {
     };
   }, [selectedElementIds, activeLayout, history, historyPointer]);
 
+  useEffect(() => {
+    const handleMessage = (event) => {
+      if (event.data && event.data.type === 'SWITCH_PAGE') {
+        const targetPage = pages.find(p => p.id === event.data.pageId);
+        if (targetPage) {
+          handleSwitchPage(targetPage);
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [pages]);
+
   const saveLayout = async () => {
     if (!activePage) {
       alert("No active page found to save.");
@@ -376,7 +389,7 @@ function Builder() {
     }
   };
 
-  const compileToStaticHtml = (page = activePage, currentSite = site, allPages = pages, previewViewMode = 'desktop') => {
+  const compileToStaticHtml = (page = activePage, currentSite = site, allPages = pages, previewViewMode = 'desktop', isLivePreview = false) => {
     if (!page) return '';
     const fontFamily = currentSite.theme?.fontFamily || 'Inter, sans-serif';
     const fontName = fontFamily.split(',')[0].replace(/['"]/g, '');
@@ -454,6 +467,12 @@ function Builder() {
         padding: 0;
         width: 100%;
         min-height: 100vh;
+      }
+
+      img {
+        max-width: 100%;
+        height: auto;
+        display: block;
       }
 
       .preview-wrapper {
@@ -586,7 +605,7 @@ function Builder() {
           <span style="font-weight: bold; color: var(--primary);">${currentSite.name}</span>
           <div style="display: flex; gap: 20px; font-size: 14px;">
             ${allPages.map(p => `
-              <a href="${p.slug === 'home' ? 'index.html' : `${p.slug}.html`}" style="text-decoration: none; color: inherit; font-weight: ${page.id === p.id ? 'bold' : 'normal'}; border-bottom: ${page.id === p.id ? '2px solid var(--primary)' : 'none'}; padding-bottom: 2px;">
+              <a href="${isLivePreview ? '#' : (p.slug === 'home' ? 'index.html' : `${p.slug}.html`)}" ${isLivePreview ? `onclick="event.preventDefault(); window.parent.postMessage({type: 'SWITCH_PAGE', pageId: ${p.id}}, '*');"` : ''} style="text-decoration: none; color: inherit; font-weight: ${page.id === p.id ? 'bold' : 'normal'}; border-bottom: ${page.id === p.id ? '2px solid var(--primary)' : 'none'}; padding-bottom: 2px;">
                 ${p.title}
               </a>
             `).join('')}
@@ -2904,7 +2923,7 @@ function Builder() {
             }}>
               <iframe
                 key={`preview-${activePage?.id}-${JSON.stringify(activeLayout).length}-${viewMode}`}
-                srcDoc={compileToStaticHtml({ ...activePage, layout: activeLayout }, site, pages, viewMode)}
+                srcDoc={compileToStaticHtml({ ...activePage, layout: activeLayout }, site, pages, viewMode, true)}
                 style={{
                   flex: 1,
                   width: '100%',
