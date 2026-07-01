@@ -1890,7 +1890,7 @@ function Builder() {
             const deltaX = d.x - startPos.x;
             const deltaY = d.y - startPos.y;
 
-            const nextLayout = activeLayout.map(sec => ({
+            setActiveLayout(prevLayout => prevLayout.map(sec => ({
               ...sec,
               elements: (sec.elements || []).map(element => {
                 const elStart = dragStartPositions.current[element.id];
@@ -1903,8 +1903,7 @@ function Builder() {
                 }
                 return element;
               })
-            }));
-            setActiveLayout(nextLayout);
+            })));
           }}
           onDragStop={(e, d) => {
             const startPos = dragStartPositions.current[el.id];
@@ -1917,21 +1916,24 @@ function Builder() {
               deltaY = Math.round(deltaY / snapToGrid) * snapToGrid;
             }
 
-            const nextLayout = activeLayout.map(sec => ({
-              ...sec,
-              elements: (sec.elements || []).map(element => {
-                const elStart = dragStartPositions.current[element.id];
-                if (elStart) {
-                  return {
-                    ...element,
-                    x: elStart.x + deltaX,
-                    y: elStart.y + deltaY
-                  };
-                }
-                return element;
-              })
-            }));
-            updateLayout(nextLayout);
+            setActiveLayout(prevLayout => {
+              const nextLayout = prevLayout.map(sec => ({
+                ...sec,
+                elements: (sec.elements || []).map(element => {
+                  const elStart = dragStartPositions.current[element.id];
+                  if (elStart) {
+                    return {
+                      ...element,
+                      x: elStart.x + deltaX,
+                      y: elStart.y + deltaY
+                    };
+                  }
+                  return element;
+                })
+              }));
+              setTimeout(() => updateLayout(nextLayout), 0);
+              return nextLayout;
+            });
             dragStartPositions.current = {};
           }}
           onResizeStop={(e, direction, ref, delta, position) => {
@@ -1943,16 +1945,19 @@ function Builder() {
               nx = Math.round(nx / snapToGrid) * snapToGrid;
               ny = Math.round(ny / snapToGrid) * snapToGrid;
             }
-            const nextLayout = activeLayout.map(sec => ({
-              ...sec,
-              elements: (sec.elements || []).map(element => {
-                if (element.id === el.id) {
-                  return { ...element, width: nw, height: nh, x: nx, y: ny };
-                }
-                return element;
-              })
-            }));
-            updateLayout(nextLayout);
+            setActiveLayout(prevLayout => {
+              const nextLayout = prevLayout.map(sec => ({
+                ...sec,
+                elements: (sec.elements || []).map(element => {
+                  if (element.id === el.id) {
+                    return { ...element, width: nw, height: nh, x: nx, y: ny };
+                  }
+                  return element;
+                })
+              }));
+              setTimeout(() => updateLayout(nextLayout), 0);
+              return nextLayout;
+            });
           }}
           onClick={handleElClick}
           onDoubleClick={handleElDoubleClick}
@@ -2050,7 +2055,7 @@ function Builder() {
 
     if (el.type === 'image') {
       return wrapWithRnd(
-        <img src={el.content?.src} alt={el.content?.alt || 'Graphic'} style={{ width: '100%', height: '100%', display: 'block', ...styles }} />
+        <img src={el.content?.src} alt={el.content?.alt || 'Graphic'} draggable={false} style={{ width: '100%', height: '100%', display: 'block', ...styles }} />
       );
     }
 
