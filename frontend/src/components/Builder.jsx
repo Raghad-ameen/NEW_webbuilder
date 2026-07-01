@@ -428,7 +428,7 @@ function Builder() {
       });
     });
 
-    const canvasWidth = previewViewMode === 'mobile' ? '375px' : previewViewMode === 'tablet' ? '768px' : '100%';
+    const canvasWidth = previewViewMode === 'mobile' ? '375px' : previewViewMode === 'tablet' ? '768px' : '1280px';
     const maxContainerWidth = previewViewMode === 'mobile' ? '375px' : previewViewMode === 'tablet' ? '768px' : '1200px';
     const containerPadding = previewViewMode === 'mobile' ? '15px' : '20px';
 
@@ -2166,13 +2166,13 @@ function Builder() {
   const getCanvasWidth = () => {
     if (viewMode === 'mobile') return '375px';
     if (viewMode === 'tablet') return '768px';
-    return '100%';
+    return '1280px';
   };
 
   const getPreviewWidth = () => {
     if (viewMode === 'mobile') return '375px';
     if (viewMode === 'tablet') return '768px';
-    return '100%';
+    return '1280px';
   };
 
   if (!activePage) {
@@ -2890,17 +2890,15 @@ function Builder() {
           /* Renders the exact compiled HTML that gets deployed — pixel-perfect, real fonts, hover effects, animations */
           <div style={{ 
             flexGrow: 1, 
-            display: 'flex', 
-            flexDirection: 'column', 
-            overflow: 'hidden', 
+            overflow: 'auto', 
             position: 'relative', 
-            background: getPageBgColor(),
-            alignItems: 'center'
+            background: getPageBgColor()
           }}>
             <div style={{
               width: getPreviewWidth(),
-              maxWidth: '100%',
+              margin: '0 auto',
               height: '100%',
+              minHeight: '100%',
               display: 'flex',
               flexDirection: 'column'
             }}>
@@ -2930,10 +2928,7 @@ function Builder() {
             style={{
               flexGrow: 1,
               padding: '40px',
-              overflowY: 'auto',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'flex-start',
+              overflow: 'auto',
               background: '#090d16',
               boxShadow: 'inset 0 0 100px rgba(0,0,0,0.8)',
               position: 'relative'
@@ -2942,7 +2937,7 @@ function Builder() {
             <div
               style={{
                 width: getCanvasWidth(),
-                maxWidth: '100%',
+                margin: '0 auto',
                 minHeight: '100%',
                 backgroundColor: getPageBgColor(),
                 color: site.theme?.textColor || '#333333',
