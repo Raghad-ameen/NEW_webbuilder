@@ -35,6 +35,13 @@ function Builder() {
   const [snapToGrid, setSnapToGrid] = useState(0); // 0 = off
   const [styleClipboard, setStyleClipboard] = useState(null);
   const [showGridGuides, setShowGridGuides] = useState(false);
+  
+  // Pro Builder Layout States
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(300);
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(320);
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [isResizingRight, setIsResizingRight] = useState(false);
+  const [canvasZoom, setCanvasZoom] = useState(1);
 
   const [activeLeftTab, setActiveLeftTab] = useState('elements');
   const [viewMode, setViewMode] = useState('desktop'); 
@@ -203,6 +210,40 @@ function Builder() {
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [selectedElementIds, activeLayout, history, historyPointer]);
+
+  // Sidebar Resizing Handlers
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (isResizingLeft) {
+        setLeftSidebarWidth(Math.min(Math.max(e.clientX, 220), 500));
+      } else if (isResizingRight) {
+        setRightSidebarWidth(Math.min(Math.max(window.innerWidth - e.clientX, 250), 600));
+      }
+    };
+    
+    const handleMouseUp = () => {
+      setIsResizingLeft(false);
+      setIsResizingRight(false);
+    };
+
+    if (isResizingLeft || isResizingRight) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      // Change cursor globally while dragging
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizingLeft, isResizingRight]);
 
   useEffect(() => {
     const handleMessage = (event) => {
@@ -937,17 +978,17 @@ function Builder() {
     ));
     setActivePage(prev => prev ? { ...prev, layout: newLayout } : prev);
 
-    savePageLayout(newLayout);
+    savePageLayout(newLayout, activePage);
   };
 
-  const saveTimeout = useRef(null);
-  const savePageLayout = (layoutData) => {
-    if (!activePage) return;
+  const saveTimeout = useRef({});
+  const savePageLayout = (layoutData, pageToSave = activePage) => {
+    if (!pageToSave) return;
     setIsSaving(true);
     
-    if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    if (saveTimeout.current[pageToSave.id]) clearTimeout(saveTimeout.current[pageToSave.id]);
     
-    saveTimeout.current = setTimeout(async () => {
+    saveTimeout.current[pageToSave.id] = setTimeout(async () => {
       try {
         const token = localStorage.getItem('access_token');
         const headers = {
@@ -957,12 +998,12 @@ function Builder() {
           headers['Authorization'] = `Bearer ${token}`;
         }
 
-        await fetch(`http://127.0.0.1:8000/api/pages/${activePage.id}/`, {
+        await fetch(`http://127.0.0.1:8000/api/pages/${pageToSave.id}/`, {
           method: 'PATCH',
           headers: headers,
           body: JSON.stringify({ 
             layout: layoutData,
-            meta_description: activePage.meta_description || ''
+            meta_description: pageToSave.meta_description || ''
           })
         });
       } catch (err) {
@@ -1357,9 +1398,13 @@ function Builder() {
     const type = e.dataTransfer.getData("elementType");
     if (!type) return;
 
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    // Find the inner dropzone to get the correct coordinate origin (the 1200px container)
+    const dropzone = e.currentTarget.querySelector('.builder-canvas-section-dropzone');
+    const rect = dropzone ? dropzone.getBoundingClientRect() : e.currentTarget.getBoundingClientRect();
+    
+    // Calculate unscaled coordinates so items drop perfectly under the mouse even when zoomed
+    const x = (e.clientX - rect.left) / canvasZoom;
+    const y = (e.clientY - rect.top) / canvasZoom;
 
     // Handle Smart Components
     if (type.startsWith('smart-')) {
@@ -1667,6 +1712,24 @@ function Builder() {
   };
 
   const handleSwitchPage = (page) => {
+    // Before switching, forcefully trigger an immediate save for the current page if it has unsaved changes
+    if (activePage && activeLayout && saveTimeout.current[activePage.id]) {
+      clearTimeout(saveTimeout.current[activePage.id]);
+      
+      const token = localStorage.getItem('access_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      fetch(`http://127.0.0.1:8000/api/pages/${activePage.id}/`, {
+        method: 'PATCH',
+        headers: headers,
+        body: JSON.stringify({ 
+          layout: activeLayout,
+          meta_description: activePage.meta_description || ''
+        })
+      }).catch(err => console.error('Immediate save failed:', err));
+    }
+
     setActivePage(page);
     const migratedLayout = migrateLayout(page.layout || []);
     setActiveLayout(migratedLayout);
@@ -1881,6 +1944,7 @@ function Builder() {
           }}
           disableDragging={isPreview}
           enableResizing={!isPreview}
+          scale={canvasZoom}
           dragGrid={snapToGrid > 0 ? [snapToGrid, snapToGrid] : [1,1]}
           resizeGrid={snapToGrid > 0 ? [snapToGrid, snapToGrid] : [1,1]}
           cancel=".element-overlay-controls"
@@ -2361,6 +2425,21 @@ function Builder() {
                 </button>
               </div>
 
+              {/* Zoom Controls */}
+              <div style={{ display: 'flex', gap: '2px', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}>
+                <button 
+                  onClick={() => setCanvasZoom(z => Math.max(z - 0.1, 0.2))} 
+                  className="btn-secondary" style={{ padding: '6px 10px', fontSize: '14px', lineHeight: 1 }} title="Zoom Out"
+                >-</button>
+                <div style={{ display: 'flex', alignItems: 'center', padding: '0 8px', fontSize: '11px', fontWeight: 'bold', width: '45px', justifyContent: 'center', color: '#fff' }}>
+                  {Math.round(canvasZoom * 100)}%
+                </div>
+                <button 
+                  onClick={() => setCanvasZoom(z => Math.min(z + 0.1, 3))} 
+                  className="btn-secondary" style={{ padding: '6px 10px', fontSize: '14px', lineHeight: 1 }} title="Zoom In"
+                >+</button>
+              </div>
+
               {/* Grid & Snap Controls */}
               <div style={{ display: 'flex', gap: '2px', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '0 6px' }}>
@@ -2497,7 +2576,8 @@ function Builder() {
       <div style={{ display: 'flex', flexGrow: 1, overflow: 'hidden', position: 'relative' }}>
         
         {!isPreview && (
-          <aside className="glass" style={{ width: '300px', display: 'flex', borderRight: '1px solid var(--border)', flexShrink: 0 }}>
+          <>
+            <aside className="glass" style={{ width: `${leftSidebarWidth}px`, display: 'flex', borderRight: '1px solid var(--border)', flexShrink: 0, transition: isResizingLeft ? 'none' : 'width 0.2s', userSelect: isResizingLeft ? 'none' : 'auto' }}>
             <div style={{ width: '65px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '15px 0', gap: '20px' }}>
               <button 
                 onClick={() => setActiveLeftTab('elements')} 
@@ -2931,6 +3011,22 @@ function Builder() {
 
             </div>
           </aside>
+          <div 
+            onMouseDown={() => setIsResizingLeft(true)}
+            style={{ 
+              width: '10px', 
+              cursor: 'col-resize', 
+              background: isResizingLeft ? 'var(--primary)' : 'transparent', 
+              zIndex: 10, 
+              marginLeft: '-5px', 
+              marginRight: '-5px', 
+              transition: 'background 0.2s',
+              opacity: isResizingLeft ? 1 : 0,
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={(e) => { if (!isResizingLeft) e.currentTarget.style.opacity = '0'; }}
+          />
+        </>
         )}
 
         {isPreview ? (
@@ -2997,7 +3093,9 @@ function Builder() {
                 overflow: 'visible',
                 position: 'relative',
                 display: 'flex',
-                flexDirection: 'column'
+                flexDirection: 'column',
+                transform: `scale(${canvasZoom})`,
+                transformOrigin: 'top center'
               }}
             >
               <style dangerouslySetInnerHTML={{ __html: site.custom_css }} />
@@ -3056,11 +3154,15 @@ function Builder() {
                       const sectionBg = (useGlobalBackground === false && secBgColor && secBgColor !== 'transparent' && secBgColor !== '') ? secBgColor : 'transparent';
 
                       return (
-                        <section key={sec.id} style={{ width: '100%', backgroundColor: sectionBg, ...secStyles, overflow: 'visible', display: 'flex', flexDirection: 'column', flexGrow: 1 }} className="builder-canvas-section">
+                        <section 
+                          key={sec.id} 
+                          style={{ width: '100%', backgroundColor: sectionBg, ...secStyles, overflow: 'visible', display: 'flex', flexDirection: 'column', flexGrow: 1 }} 
+                          className="builder-canvas-section"
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => { e.preventDefault(); handleDropElement(e, sec.id); }}
+                        >
                           <div
                             className="builder-canvas-section-dropzone"
-                            onDragOver={(e) => e.preventDefault()}
-                            onDrop={(e) => { e.preventDefault(); handleDropElement(e, sec.id); }}
                             style={{
                               maxWidth: containerWidth,
                               margin: '0 auto',
@@ -3081,8 +3183,6 @@ function Builder() {
                             {(sec.elements || []).length === 0 && (
                               <div style={{
                                 padding: '40px 15px',
-                                border: '2px dashed rgba(255,255,255,0.1)',
-                                borderRadius: '8px',
                                 textAlign: 'center',
                                 color: '#64748b',
                                 fontSize: '12px',
@@ -3129,7 +3229,23 @@ function Builder() {
 
 
         {!isPreview && (
-          <aside className="glass" style={{ width: '320px', borderLeft: '1px solid var(--border)', padding: '20px', overflowY: 'auto', flexShrink: 0 }}>
+          <>
+            <div 
+              onMouseDown={() => setIsResizingRight(true)}
+              style={{ 
+                width: '10px', 
+                cursor: 'col-resize', 
+                background: isResizingRight ? 'var(--primary)' : 'transparent', 
+                zIndex: 10, 
+                marginLeft: '-5px', 
+                marginRight: '-5px', 
+                transition: 'background 0.2s',
+                opacity: isResizingRight ? 1 : 0,
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+              onMouseLeave={(e) => { if (!isResizingRight) e.currentTarget.style.opacity = '0'; }}
+            />
+            <aside className="glass" style={{ width: `${rightSidebarWidth}px`, borderLeft: '1px solid var(--border)', padding: '20px', overflowY: 'auto', flexShrink: 0, transition: isResizingRight ? 'none' : 'width 0.2s', userSelect: isResizingRight ? 'none' : 'auto' }}>
             {selectedElement ? (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
@@ -3867,6 +3983,7 @@ function Builder() {
               </div>
             )}
           </aside>
+          </>
         )}
 
       </div>
