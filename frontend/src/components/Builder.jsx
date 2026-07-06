@@ -245,6 +245,37 @@ function Builder() {
     };
   }, [selectedElementIds, activeLayout, history, historyPointer]);
 
+  // AOS Intersection Observer for Builder Preview
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        const el = entry.target;
+        if (entry.isIntersecting) {
+          if (el.dataset.aosName && el.dataset.aosName !== 'none') {
+            el.style.animationName = el.dataset.aosName;
+            el.style.animationDuration = el.dataset.aosDuration || '1s';
+            el.style.animationDelay = el.dataset.aosDelay || '0s';
+            el.style.animationIterationCount = el.dataset.aosIteration || '1';
+            el.style.animationFillMode = 'both';
+            if (el.style.opacity === '0') el.style.opacity = '';
+          }
+        } else {
+          if (el.dataset.aosName && el.dataset.aosName !== 'none') {
+            el.style.animationName = 'none';
+            if (['fadeIn', 'slideUp', 'slideDown', 'zoomIn'].includes(el.dataset.aosName)) {
+              el.style.opacity = '0';
+            }
+          }
+        }
+      });
+    }, { threshold: 0.1 });
+
+    const elements = document.querySelectorAll('.aos-element');
+    elements.forEach(el => observer.observe(el));
+
+    return () => observer.disconnect();
+  }, [activeLayout, isPreview, activePage]);
+
   // Sidebar Resizing Handlers
   useEffect(() => {
     const handleMouseMove = (e) => {
@@ -727,12 +758,12 @@ function Builder() {
           });
         }
 
+        let aosAttrs = '';
         if (el.animation && el.animation.type && el.animation.type !== 'none') {
-          elStyles += `animation-name: ${el.animation.type}; `;
-          elStyles += `animation-duration: ${el.animation.duration || 1}s; `;
-          elStyles += `animation-delay: ${el.animation.delay || 0}s; `;
-          elStyles += `animation-iteration-count: ${el.animation.iteration || '1'}; `;
-          elStyles += `animation-fill-mode: both; `;
+          aosAttrs = ` data-aos-name="${el.animation.type}" data-aos-duration="${el.animation.duration || 1}s" data-aos-delay="${el.animation.delay || 0}s" data-aos-iteration="${el.animation.iteration || '1'}" `;
+          if (['fadeIn', 'slideUp', 'slideDown', 'zoomIn'].includes(el.animation.type)) {
+            elStyles += `opacity: 0; `;
+          }
         }
 
         let innerMarkup = '';
@@ -838,7 +869,7 @@ function Builder() {
         }
 
         bodyHtml += `
-          <div class="element-wrapper" data-element-id="${el.id}" style="${elStyles}">
+          <div class="element-wrapper" data-element-id="${el.id}" style="${elStyles}"${aosAttrs}>
             ${wrapStart}
             ${innerMarkup}
             ${wrapEnd}
@@ -964,6 +995,31 @@ function Builder() {
               alert('Network error.');
             }
           }
+          document.addEventListener('DOMContentLoaded', () => {
+            const observer = new IntersectionObserver((entries) => {
+              entries.forEach(entry => {
+                const el = entry.target;
+                if (entry.isIntersecting) {
+                  if (el.dataset.aosName && el.dataset.aosName !== 'none') {
+                    el.style.animationName = el.dataset.aosName;
+                    el.style.animationDuration = el.dataset.aosDuration;
+                    el.style.animationDelay = el.dataset.aosDelay;
+                    el.style.animationIterationCount = el.dataset.aosIteration;
+                    el.style.animationFillMode = 'both';
+                    if (el.style.opacity === '0') el.style.opacity = '';
+                  }
+                } else {
+                  if (el.dataset.aosName && el.dataset.aosName !== 'none') {
+                    el.style.animationName = 'none';
+                    if (['fadeIn', 'slideUp', 'slideDown', 'zoomIn'].includes(el.dataset.aosName)) {
+                      el.style.opacity = '0';
+                    }
+                  }
+                }
+              });
+            }, { threshold: 0.1 });
+            document.querySelectorAll('[data-aos-name]').forEach(el => observer.observe(el));
+          });
         </script>
       </body>
       </html>
@@ -1923,6 +1979,7 @@ function Builder() {
 
   const renderCanvasElement = (el) => {
     const isSelected = selectedElementIds.includes(el.id);
+    
     const styles = renderInlineStyles(el.styles);
     if (['heading', 'text', 'button'].includes(el.type)) {
       styles.whiteSpace = 'pre-wrap';
@@ -1955,16 +2012,7 @@ function Builder() {
       setInlineEditingId(null);
     };
 
-    const getAnimationStyles = (el) => {
-      if (!el.animation || !el.animation.type || el.animation.type === 'none') return {};
-      return {
-        animationName: el.animation.type,
-        animationDuration: `${el.animation.duration || 1}s`,
-        animationDelay: `${el.animation.delay || 0}s`,
-        animationIterationCount: el.animation.iteration || '1',
-        animationFillMode: 'both'
-      };
-    };
+
 
     const getWrappedContent = (content) => {
       if (!isPreview || !el.action || el.action.type === 'none') {
@@ -2143,12 +2191,25 @@ function Builder() {
             zIndex: el.styles?.zIndex || 10,
             outline: isSelected && !isPreview ? '2px dashed rgba(99, 102, 241, 0.5)' : 'none',
             outlineOffset: '2px',
-            ...inlineStyles,
-            ...getAnimationStyles(el)
+            ...inlineStyles
           }}
         >
           {overlayControls}
-          {getWrappedContent(elementInnerContent)}
+          <div
+            key={el.animation?.type + '_' + el.animation?.duration + '_' + el.animation?.delay}
+            className="aos-element"
+            data-aos-name={el.animation?.type && el.animation.type !== 'none' ? el.animation.type : ''}
+            data-aos-duration={el.animation ? `${el.animation.duration || 1}s` : ''}
+            data-aos-delay={el.animation ? `${el.animation.delay || 0}s` : ''}
+            data-aos-iteration={el.animation ? el.animation.iteration || '1' : ''}
+            style={{ 
+              width: '100%', 
+              height: '100%',
+              opacity: el.animation && ['fadeIn', 'slideUp', 'slideDown', 'zoomIn'].includes(el.animation.type) ? 0 : 1
+            }}
+          >
+            {getWrappedContent(elementInnerContent)}
+          </div>
         </Rnd>
       );
     };
@@ -3016,7 +3077,7 @@ function Builder() {
                             const updated = { ...activePage, meta_description: JSON.stringify(newSettings) };
                             setActivePage(updated);
                             setPages(pages.map(p => p.id === activePage.id ? updated : p));
-                            savePageLayout(activeLayout);
+                            savePageLayout(activeLayout, updated);
                           }}
                         />
                         Use Global background color
@@ -3031,7 +3092,7 @@ function Builder() {
                             const updated = { ...activePage, meta_description: JSON.stringify(newSettings) };
                             setActivePage(updated);
                             setPages(pages.map(p => p.id === activePage.id ? updated : p));
-                            savePageLayout(activeLayout);
+                            savePageLayout(activeLayout, updated);
                           }}
                         />
                         Custom color for this page
@@ -3048,7 +3109,7 @@ function Builder() {
                             const updated = { ...activePage, meta_description: JSON.stringify(newSettings) };
                             setActivePage(updated);
                             setPages(pages.map(p => p.id === activePage.id ? updated : p));
-                            savePageLayout(activeLayout);
+                            savePageLayout(activeLayout, updated);
                           }}
                           style={{ width: '45px', height: '40px', padding: 0, border: 'none', cursor: 'pointer' }}
                         />
@@ -3060,7 +3121,7 @@ function Builder() {
                             const updated = { ...activePage, meta_description: JSON.stringify(newSettings) };
                             setActivePage(updated);
                             setPages(pages.map(p => p.id === activePage.id ? updated : p));
-                            savePageLayout(activeLayout);
+                            savePageLayout(activeLayout, updated);
                           }}
                         />
                       </div>
