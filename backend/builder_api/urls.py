@@ -6,6 +6,7 @@ from .views import (
     PublicFormSubmissionView, AdminSiteListView, AdminToggleSiteStatusView
 )
 from rest_framework.authtoken.views import obtain_auth_token
+from rest_framework_simplejwt.views import TokenRefreshView
 
 router = SimpleRouter()  # 🌟 تعديل هنا
 router.register('sites', SiteViewSet, basename='site')
@@ -18,6 +19,7 @@ urlpatterns = [
     path('auth/signup/', SignupView.as_view(), name='auth_signup'),
     path('auth/login/', LoginView.as_view(), name='auth_login'),
     path('auth/logout/', LogoutView.as_view(), name='auth_logout'),
+    path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/user/', UserInfoView.as_view(), name='auth_user'),
     
     # 2️⃣ الأكواد العامة والإدارية

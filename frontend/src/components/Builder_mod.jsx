@@ -1231,7 +1231,7 @@ const renderCanvasElement = (el, secId) => {
     
     if (isPreview) {
       return (
-        <div key={el.id} className="builder-canvas-element" data-element-id={el.id} style={{ position: 'absolute', left: el.x || 0, top: el.y || 0, width: el.width || '100%', height: el.height || 'auto', ...elStyles }}>
+        <div key={el.id} className="builder-canvas-element" data-element-id={el.id} style={{ position: 'absolute', left: el.x || 0, top: el.y || 0, width: el.width || 200, height: el.height || 50, ...elStyles }}>
           {innerContent}
         </div>
       );

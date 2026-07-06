@@ -8,7 +8,17 @@ export const TEMPLATES = [
       backgroundColor: '#0b0f19',
       textColor: '#f3f4f6',
       primaryColor: '#6366f1',
-      fontFamily: 'Outfit, sans-serif'
+      fontFamily: 'Outfit, sans-serif',
+      fonts: [
+        'Outfit', 'Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Poppins', 'Raleway',
+        'Noto Sans', 'Cairo', 'Tajawal', 'Almarai', 'Changa', 'Tinos', 'Cormorant Garamond',
+        'Playfair Display', 'Merriweather', 'Source Sans Pro', 'Nunito', 'Work Sans',
+        'IBM Plex Sans', 'Fira Sans', 'Ubuntu', 'Barlow', 'DM Sans', 'Space Grotesk',
+        'Arial', 'Helvetica', 'Georgia', 'Times New Roman', 'Verdana', 'Trebuchet MS',
+        'Impact', 'Comic Sans MS', 'Courier New', 'Lucida Console', 'Tahoma', 'Segoe UI',
+        'Noto Sans Arabic', 'Noto Naskh Arabic', 'Amiri', 'Scheherazade New', 'Lateef',
+        'Markazi Text', 'Reem Kufi', 'Jomhuria', 'Lalezar', 'Rakkas', 'Changa One'
+      ]
     },
     pages: [
       {
@@ -229,7 +239,17 @@ export const TEMPLATES = [
       backgroundColor: '#09090b',
       textColor: '#fafafa',
       primaryColor: '#10b981',
-      fontFamily: 'Outfit, sans-serif'
+      fontFamily: 'Outfit, sans-serif',
+      fonts: [
+        'Outfit', 'Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Poppins', 'Raleway',
+        'Noto Sans', 'Cairo', 'Tajawal', 'Almarai', 'Changa', 'Tinos', 'Cormorant Garamond',
+        'Playfair Display', 'Merriweather', 'Source Sans Pro', 'Nunito', 'Work Sans',
+        'IBM Plex Sans', 'Fira Sans', 'Ubuntu', 'Barlow', 'DM Sans', 'Space Grotesk',
+        'Arial', 'Helvetica', 'Georgia', 'Times New Roman', 'Verdana', 'Trebuchet MS',
+        'Impact', 'Comic Sans MS', 'Courier New', 'Lucida Console', 'Tahoma', 'Segoe UI',
+        'Noto Sans Arabic', 'Noto Naskh Arabic', 'Amiri', 'Scheherazade New', 'Lateef',
+        'Markazi Text', 'Reem Kufi', 'Jomhuria', 'Lalezar', 'Rakkas', 'Changa One'
+      ]
     },
     pages: [
       {
@@ -383,7 +403,17 @@ export const TEMPLATES = [
       backgroundColor: '#fdfcf7',
       textColor: '#2d2a26',
       primaryColor: '#c2410c',
-      fontFamily: 'Playfair Display, Georgia, serif'
+      fontFamily: 'Playfair Display, Georgia, serif',
+      fonts: [
+        'Outfit', 'Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Poppins', 'Raleway',
+        'Noto Sans', 'Cairo', 'Tajawal', 'Almarai', 'Changa', 'Tinos', 'Cormorant Garamond',
+        'Playfair Display', 'Merriweather', 'Source Sans Pro', 'Nunito', 'Work Sans',
+        'IBM Plex Sans', 'Fira Sans', 'Ubuntu', 'Barlow', 'DM Sans', 'Space Grotesk',
+        'Arial', 'Helvetica', 'Georgia', 'Times New Roman', 'Verdana', 'Trebuchet MS',
+        'Impact', 'Comic Sans MS', 'Courier New', 'Lucida Console', 'Tahoma', 'Segoe UI',
+        'Noto Sans Arabic', 'Noto Naskh Arabic', 'Amiri', 'Scheherazade New', 'Lateef',
+        'Markazi Text', 'Reem Kufi', 'Jomhuria', 'Lalezar', 'Rakkas', 'Changa One'
+      ]
     },
     pages: [
       {

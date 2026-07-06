@@ -6,12 +6,46 @@ import {
   Copy, Settings, Palette, FileCode, Layers, CheckCircle, RefreshCw, Sparkles, Mail,
   ClipboardCopy, ClipboardPaste, AlignLeft, AlignCenter, AlignRight,
   AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
-  Move, Group, Ungroup, Download
+  Move, Group, Ungroup, Download, X
 } from 'lucide-react';
 import { TEMPLATES } from '../utils/TemplateData';
 import { Rnd } from 'react-rnd';
 import JSZip from 'jszip';
 import { getSmartComponentTypes, getSmartComponent, calculateGroupBounds, moveElementGroup } from '../utils/SmartComponents';
+const apiFetch = async (url, options = {}) => {
+  let token = localStorage.getItem('access_token');
+  const headers = { ...options.headers };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  let response = await fetch(url, { ...options, headers });
+
+  if (response.status === 401) {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (refreshToken) {
+      const refreshResponse = await fetch('http://127.0.0.1:8000/api/auth/refresh/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh: refreshToken })
+      });
+      if (refreshResponse.ok) {
+        const data = await refreshResponse.json();
+        localStorage.setItem('access_token', data.access);
+        headers['Authorization'] = `Bearer ${data.access}`;
+        response = await fetch(url, { ...options, headers });
+      } else {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/';
+      }
+    } else {
+      localStorage.removeItem('access_token');
+      window.location.href = '/';
+    }
+  }
+  return response;
+};
 
 function Builder() {
   const { siteId } = useParams();
@@ -97,7 +131,7 @@ function Builder() {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const siteRes = await fetch(`http://127.0.0.1:8000/api/sites/${siteId}/`, { headers });
+      const siteRes = await apiFetch(`http://127.0.0.1:8000/api/sites/${siteId}/`, { headers });
       
       if (siteRes.status === 403) {
         navigate('/', { state: { showSuspendedModal: true } });
@@ -116,7 +150,7 @@ function Builder() {
       }
       setSite(siteData);
       
-      const pagesRes = await fetch(`http://127.0.0.1:8000/api/pages/?site_id=${siteId}`, { headers });
+      const pagesRes = await apiFetch(`http://127.0.0.1:8000/api/pages/?site_id=${siteId}`, { headers });
       if (pagesRes.ok) {
         const pagesData = await pagesRes.json();
         const sitePages = pagesData.filter(p => p.site === parseInt(siteId));
@@ -704,14 +738,14 @@ function Builder() {
         let innerMarkup = '';
         if (el.type === 'heading') {
           const Tag = el.content?.tag || 'h2';
-          innerMarkup = `<${Tag} style="margin: 0; font-size: inherit; color: inherit;">${el.content?.text || 'Heading'}</${Tag}>`;
+          innerMarkup = `<${Tag} style="margin: 0; font-size: inherit; color: inherit; white-space: pre-wrap;">${el.content?.text || 'Heading'}</${Tag}>`;
         } else if (el.type === 'text') {
-          innerMarkup = `<div style="font-size: inherit; color: inherit;">${(el.content?.text || 'Paragraph text').replace(/\n/g, '<br>')}</div>`;
+          innerMarkup = `<div style="font-size: inherit; color: inherit; white-space: pre-wrap;">${(el.content?.text || 'Paragraph text').replace(/\n/g, '<br>')}</div>`;
         } else if (el.type === 'button') {
           if (el.action && el.action.type === 'submit_inputs') {
-            innerMarkup = `<button class="site-builder-btn" onclick="submitInputs(event, '${el.action.value || ''}')" style="border: none; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; padding: 0; border-radius: inherit;">${el.content?.text || 'Submit'}</button>`;
+            innerMarkup = `<button class="site-builder-btn" onclick="submitInputs(event, '${el.action.value || ''}')" style="border: none; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; padding: 0; border-radius: inherit; white-space: pre-wrap;">${el.content?.text || 'Submit'}</button>`;
           } else {
-            innerMarkup = `<button class="site-builder-btn" style="border: none; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; padding: 0; border-radius: inherit;">${el.content?.text || 'Button'}</button>`;
+            innerMarkup = `<button class="site-builder-btn" style="border: none; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; padding: 0; border-radius: inherit; white-space: pre-wrap;">${el.content?.text || 'Button'}</button>`;
           }
         } else if (el.type === 'image') {
           innerMarkup = `<img src="${el.content?.src}" alt="${el.content?.alt || 'Graphic'}" style="width: 100%; height: 100%; display: block; border-radius: inherit;" />`;
@@ -998,7 +1032,7 @@ function Builder() {
           headers['Authorization'] = `Bearer ${token}`;
         }
 
-        await fetch(`http://127.0.0.1:8000/api/pages/${pageToSave.id}/`, {
+        await apiFetch(`http://127.0.0.1:8000/api/pages/${pageToSave.id}/`, {
           method: 'PATCH',
           headers: headers,
           body: JSON.stringify({ 
@@ -1069,6 +1103,32 @@ function Builder() {
       })
     }));
     updateLayout(nextLayout);
+  };
+
+  const renderLabelWithReset = (label, groupName, keyName) => {
+    const hasValue = selectedElement && selectedElement[groupName] && selectedElement[groupName][keyName] !== undefined && selectedElement[groupName][keyName] !== '';
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+        <label style={{ margin: 0 }}>{label}</label>
+        {hasValue && (
+          <button 
+            onClick={() => updateSelectedElement({ [groupName]: { [keyName]: undefined } })}
+            style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px' }}
+            title={`Reset ${label}`}
+          >
+            <X size={10} /> Reset
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const updateSelectedPage = (updates) => {
+    if (!activePage) return;
+    setPages(prevPages => prevPages.map(p => 
+      p.id === activePage.id ? { ...p, ...updates } : p
+    ));
+    setActivePage(prev => ({ ...prev, ...updates }));
   };
 
   const handleMoveElement = (elementId, direction) => {
@@ -1412,7 +1472,14 @@ function Builder() {
       const smartComponent = getSmartComponent(componentType);
       if (!smartComponent) return;
 
-      const generatedElements = smartComponent.generateElements(sectionId, pages);
+      let maxZ = 10;
+      activeLayout.forEach(s => (s.elements||[]).forEach(e => {
+        if (parseInt(e.styles?.zIndex||10) > maxZ) maxZ = parseInt(e.styles?.zIndex||10);
+      }));
+      const generatedElements = smartComponent.generateElements(sectionId, pages).map((el, i) => ({
+        ...el,
+        styles: { ...(el.styles || {}), zIndex: maxZ + 1 + i }
+      }));
       
       // Apply section styles from smart component
       const nextLayout = activeLayout.map(sec => {
@@ -1499,13 +1566,22 @@ function Builder() {
       }
     };
 
+    let maxZ = 10;
+    activeLayout.forEach(s => (s.elements||[]).forEach(e => {
+      if (parseInt(e.styles?.zIndex||10) > maxZ) maxZ = parseInt(e.styles?.zIndex||10);
+    }));
+
     const newEl = {
       id: `el_${Date.now()}`,
       x: Math.max(0, x - 100),
       y: Math.max(0, y - 20),
       width: 250,
       height: type === 'form' ? 320 : type === 'text' ? 80 : 50,
-      ...defaultElements[type]
+      ...defaultElements[type],
+      styles: {
+        ...(defaultElements[type].styles || {}),
+        zIndex: maxZ + 1
+      }
     };
 
     const nextLayout = activeLayout.map(sec => {
@@ -1720,7 +1796,7 @@ function Builder() {
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      fetch(`http://127.0.0.1:8000/api/pages/${activePage.id}/`, {
+      apiFetch(`http://127.0.0.1:8000/api/pages/${activePage.id}/`, {
         method: 'PATCH',
         headers: headers,
         body: JSON.stringify({ 
@@ -1750,7 +1826,7 @@ function Builder() {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const res = await fetch(`http://127.0.0.1:8000/api/sites/${siteId}/`, {
+      const res = await apiFetch(`http://127.0.0.1:8000/api/sites/${siteId}/`, {
         method: 'PATCH',
         headers: headers,
         body: JSON.stringify({ is_published: shouldPublish })
@@ -1848,6 +1924,9 @@ function Builder() {
   const renderCanvasElement = (el) => {
     const isSelected = selectedElementIds.includes(el.id);
     const styles = renderInlineStyles(el.styles);
+    if (['heading', 'text', 'button'].includes(el.type)) {
+      styles.whiteSpace = 'pre-wrap';
+    }
     const isInlineEditing = inlineEditingId === el.id;
 
     const overlayControls = !isPreview && (
@@ -2061,7 +2140,7 @@ function Builder() {
           style={{
             position: 'absolute',
             display: 'inline-block',
-            zIndex: isSelected ? 50 : 10,
+            zIndex: el.styles?.zIndex || 10,
             outline: isSelected && !isPreview ? '2px dashed rgba(99, 102, 241, 0.5)' : 'none',
             outlineOffset: '2px',
             ...inlineStyles,
@@ -3156,11 +3235,45 @@ function Builder() {
                       return (
                         <section 
                           key={sec.id} 
-                          style={{ width: '100%', backgroundColor: sectionBg, ...secStyles, overflow: 'visible', display: 'flex', flexDirection: 'column', flexGrow: 1 }} 
+                          style={{ position: 'relative', width: '100%', backgroundColor: sectionBg, ...secStyles, overflow: 'visible', display: 'flex', flexDirection: 'column', flexGrow: 1 }} 
                           className="builder-canvas-section"
                           onDragOver={(e) => e.preventDefault()}
                           onDrop={(e) => { e.preventDefault(); handleDropElement(e, sec.id); }}
                         >
+                          {!isPreview && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (window.confirm('Are you sure you want to delete this section?')) {
+                                  handleDeleteSection(sec.id);
+                                }
+                              }}
+                              style={{
+                                position: 'absolute',
+                                top: '10px',
+                                right: '20px',
+                                background: '#ef4444',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '4px',
+                                padding: '6px 12px',
+                                cursor: 'pointer',
+                                zIndex: 100,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                fontSize: '12px',
+                                fontWeight: 'bold',
+                                opacity: 0.7,
+                                transition: 'opacity 0.2s'
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                              onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
+                              title="Delete Section"
+                            >
+                              <Trash2 size={14} /> Delete Section
+                            </button>
+                          )}
                           <div
                             className="builder-canvas-section-dropzone"
                             style={{
@@ -3465,7 +3578,7 @@ function Builder() {
                   {['heading', 'text', 'button', 'input'].includes(selectedElement.type) && (
                     <div style={{ marginBottom: '15px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                        <label>Font Size</label>
+                        {renderLabelWithReset('Font Size', 'styles', 'fontSize')}
                         <span style={{ fontSize: '12px', color: 'var(--primary)' }}>{selectedElement.styles?.fontSize || '16'}px</span>
                       </div>
                       <input
@@ -3481,7 +3594,7 @@ function Builder() {
 
                   {['heading', 'text', 'button'].includes(selectedElement.type) && (
                     <div style={{ marginBottom: '12px' }}>
-                      <label>Font Weight</label>
+                      {renderLabelWithReset('Font Weight', 'styles', 'fontWeight')}
                       <select
                         value={selectedElement.styles?.fontWeight || '400'}
                         onChange={(e) => updateSelectedElement({ styles: { fontWeight: e.target.value } })}
@@ -3493,6 +3606,72 @@ function Builder() {
                         <option value="700">700 - Bold</option>
                         <option value="800">800 - Extra Bold</option>
                         <option value="900">900 - Black</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {['heading', 'text', 'button', 'input'].includes(selectedElement.type) && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <label>Font Family</label>
+                      <select
+                        value={selectedElement.styles?.fontFamily || 'inherit'}
+                        onChange={(e) => updateSelectedElement({ styles: { fontFamily: e.target.value } })}
+                        style={{ fontSize: '11px' }}
+                      >
+                        <option value="inherit">Inherit (Default)</option>
+                        <optgroup label="English Fonts">
+                          <option value="'Outfit', sans-serif">Outfit</option>
+                          <option value="'Inter', sans-serif">Inter</option>
+                          <option value="'Roboto', sans-serif">Roboto</option>
+                          <option value="'Open Sans', sans-serif">Open Sans</option>
+                          <option value="'Lato', sans-serif">Lato</option>
+                          <option value="'Montserrat', sans-serif">Montserrat</option>
+                          <option value="'Poppins', sans-serif">Poppins</option>
+                          <option value="'Raleway', sans-serif">Raleway</option>
+                          <option value="'Noto Sans', sans-serif">Noto Sans</option>
+                          <option value="'Tinos', serif">Tinos</option>
+                          <option value="'Cormorant Garamond', serif">Cormorant Garamond</option>
+                          <option value="'Playfair Display', serif">Playfair Display</option>
+                          <option value="'Merriweather', serif">Merriweather</option>
+                          <option value="'Source Sans Pro', sans-serif">Source Sans Pro</option>
+                          <option value="'Nunito', sans-serif">Nunito</option>
+                          <option value="'Work Sans', sans-serif">Work Sans</option>
+                          <option value="'IBM Plex Sans', sans-serif">IBM Plex Sans</option>
+                          <option value="'Fira Sans', sans-serif">Fira Sans</option>
+                          <option value="'Ubuntu', sans-serif">Ubuntu</option>
+                          <option value="'Barlow', sans-serif">Barlow</option>
+                          <option value="'DM Sans', sans-serif">DM Sans</option>
+                          <option value="'Space Grotesk', sans-serif">Space Grotesk</option>
+                          <option value="Arial, sans-serif">Arial</option>
+                          <option value="'Helvetica', sans-serif">Helvetica</option>
+                          <option value="Georgia, serif">Georgia</option>
+                          <option value="'Times New Roman', serif">Times New Roman</option>
+                          <option value="Verdana, sans-serif">Verdana</option>
+                          <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                          <option value="Impact, sans-serif">Impact</option>
+                          <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+                          <option value="'Courier New', monospace">Courier New</option>
+                          <option value="'Lucida Console', monospace">Lucida Console</option>
+                          <option value="Tahoma, sans-serif">Tahoma</option>
+                          <option value="'Segoe UI', sans-serif">Segoe UI</option>
+                        </optgroup>
+                        <optgroup label="Arabic Fonts">
+                          <option value="'Noto Sans Arabic', sans-serif">Noto Sans Arabic</option>
+                          <option value="'Noto Naskh Arabic', serif">Noto Naskh Arabic</option>
+                          <option value="'Amiri', serif">Amiri</option>
+                          <option value="'Scheherazade New', serif">Scheherazade New</option>
+                          <option value="Lateef, serif">Lateef</option>
+                          <option value="'Markazi Text', serif">Markazi Text</option>
+                          <option value="'Reem Kufi', sans-serif">Reem Kufi</option>
+                          <option value="Jomhuria, serif">Jomhuria</option>
+                          <option value="Lalezar, serif">Lalezar</option>
+                          <option value="Rakkas, serif">Rakkas</option>
+                          <option value="'Changa One', sans-serif">Changa One</option>
+                          <option value="Cairo, sans-serif">Cairo</option>
+                          <option value="Tajawal, sans-serif">Tajawal</option>
+                          <option value="Almarai, sans-serif">Almarai</option>
+                          <option value="Changa, sans-serif">Changa</option>
+                        </optgroup>
                       </select>
                     </div>
                   )}
@@ -3551,7 +3730,7 @@ function Builder() {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '15px' }}>
                     {['heading', 'text', 'button', 'form', 'input'].includes(selectedElement.type) && (
                       <div>
-                        <label>Text Color</label>
+                        {renderLabelWithReset('Text Color', 'styles', 'color')}
                         <input
                           type="color"
                           value={selectedElement.styles?.color || '#333333'}
@@ -3562,7 +3741,7 @@ function Builder() {
                     )}
                     {['button', 'form', 'text'].includes(selectedElement.type) && (
                       <div>
-                        <label>Background</label>
+                        {renderLabelWithReset('Background Color', 'styles', 'backgroundColor')}
                         <input
                           type="color"
                           value={selectedElement.styles?.backgroundColor || '#ffffff'}
@@ -4372,6 +4551,16 @@ function Builder() {
                     let maxZ = 10;
                     activeLayout.forEach(s => (s.elements||[]).forEach(e => { if (parseInt(e.styles?.zIndex||10) > maxZ) maxZ = parseInt(e.styles?.zIndex||10); }));
                     const n = activeLayout.map(s => ({ ...s, elements: (s.elements||[]).map(e => e.id === contextMenu.elementId ? { ...e, styles: { ...e.styles, zIndex: maxZ + 1 } } : e) }));
+                    updateLayout(n);
+                  })}
+                  {menuItem('🔼', 'Bring Forward', () => {
+                    const currentZ = parseInt(targetEl?.styles?.zIndex || 10);
+                    const n = activeLayout.map(s => ({ ...s, elements: (s.elements||[]).map(e => e.id === contextMenu.elementId ? { ...e, styles: { ...e.styles, zIndex: currentZ + 1 } } : e) }));
+                    updateLayout(n);
+                  })}
+                  {menuItem('🔽', 'Send Backward', () => {
+                    const currentZ = parseInt(targetEl?.styles?.zIndex || 10);
+                    const n = activeLayout.map(s => ({ ...s, elements: (s.elements||[]).map(e => e.id === contextMenu.elementId ? { ...e, styles: { ...e.styles, zIndex: currentZ - 1 } } : e) }));
                     updateLayout(n);
                   })}
                   {menuItem('⬇', 'Send to Back', () => {
