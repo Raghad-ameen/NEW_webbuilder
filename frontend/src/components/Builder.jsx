@@ -6,7 +6,7 @@ import {
   Copy, Settings, Palette, FileCode, Layers, CheckCircle, RefreshCw, Sparkles, Mail,
   ClipboardCopy, ClipboardPaste, AlignLeft, AlignCenter, AlignRight,
   AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
-  Move, Group, Ungroup, Download, X
+  Move, Group, Ungroup, Download, X, Circle, Triangle, Link2
 } from 'lucide-react';
 import { TEMPLATES } from '../utils/TemplateData';
 import { Rnd } from 'react-rnd';
@@ -69,6 +69,7 @@ function Builder() {
   const [snapToGrid, setSnapToGrid] = useState(0); // 0 = off
   const [styleClipboard, setStyleClipboard] = useState(null);
   const [showGridGuides, setShowGridGuides] = useState(false);
+  const [selectedSectionId, setSelectedSectionId] = useState(null);
   
   // Pro Builder Layout States
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(300);
@@ -844,6 +845,17 @@ function Builder() {
               />
             </div>
           `;
+        } else if (el.type === 'shape') {
+          const shapeType = el.content?.shapeType || 'rectangle';
+          let shapeStyle = '';
+          if (shapeType === 'circle') {
+            shapeStyle += 'border-radius: 50%; ';
+          } else if (shapeType === 'triangle') {
+            shapeStyle += 'clip-path: polygon(50% 0%, 0% 100%, 100% 100%); -webkit-clip-path: polygon(50% 0%, 0% 100%, 100% 100%); ';
+          }
+          innerMarkup = `<div style="width: 100%; height: 100%; ${shapeStyle}"></div>`;
+        } else if (el.type === 'link') {
+          innerMarkup = `<a href="${el.content?.link || '#'}" style="color: inherit; text-decoration: inherit; display: inline-block; width: 100%; height: 100%;">${el.content?.text || 'Link'}</a>`;
         }
 
         let wrapStart = '';
@@ -1376,6 +1388,13 @@ function Builder() {
   };
 
   const handleAddElement = (type) => {
+    let actualType = type;
+    let shapeType = null;
+    if (type.startsWith('shape-')) {
+      actualType = 'shape';
+      shapeType = type.replace('shape-', '');
+    }
+
     const defaultElements = {
       heading: {
         type: 'heading',
@@ -1427,12 +1446,26 @@ function Builder() {
         type: 'input',
         content: { label: 'Form Input', placeholder: 'Enter details...', inputType: 'text', name: 'input_field', required: false },
         styles: { color: '#ffffff', marginBottom: '15' }
+      },
+      shape: {
+        type: 'shape',
+        content: { shapeType: shapeType || 'rectangle' },
+        width: 150,
+        height: 150,
+        styles: { backgroundColor: '#6366f1' }
+      },
+      link: {
+        type: 'link',
+        content: { text: 'Clickable Text Link', link: '#' },
+        width: 150,
+        height: 40,
+        styles: { color: '#6366f1', textDecoration: 'underline', fontSize: '16' }
       }
     };
 
     const newEl = {
       id: `el_${Date.now()}`,
-      ...defaultElements[type]
+      ...defaultElements[actualType]
     };
 
     let nextLayout = [...activeLayout];
@@ -1563,6 +1596,13 @@ function Builder() {
     }
 
     // Handle regular elements
+    let elementType = type;
+    let shapeType = null;
+    if (type.startsWith('shape-')) {
+      elementType = 'shape';
+      shapeType = type.replace('shape-', '');
+    }
+
     const defaultElements = {
       heading: {
         type: 'heading',
@@ -1619,6 +1659,20 @@ function Builder() {
         type: 'input',
         content: { label: 'Form Input', placeholder: 'Enter details...', inputType: 'text', name: 'input_field', required: false },
         styles: { color: '#ffffff', marginBottom: '15' }
+      },
+      shape: {
+        type: 'shape',
+        content: { shapeType: shapeType || 'rectangle' },
+        width: 150,
+        height: 150,
+        styles: { backgroundColor: '#6366f1' }
+      },
+      link: {
+        type: 'link',
+        content: { text: 'Clickable Text Link', link: '#' },
+        width: 150,
+        height: 40,
+        styles: { color: '#6366f1', textDecoration: 'underline', fontSize: '16' }
       }
     };
 
@@ -1631,11 +1685,11 @@ function Builder() {
       id: `el_${Date.now()}`,
       x: Math.max(0, x - 100),
       y: Math.max(0, y - 20),
-      width: 250,
-      height: type === 'form' ? 320 : type === 'text' ? 80 : 50,
-      ...defaultElements[type],
+      width: elementType === 'shape' ? 150 : elementType === 'link' ? 150 : 250,
+      height: elementType === 'shape' ? 150 : elementType === 'link' ? 40 : 50,
+      ...defaultElements[elementType],
       styles: {
-        ...(defaultElements[type].styles || {}),
+        ...(defaultElements[elementType].styles || {}),
         zIndex: maxZ + 1
       }
     };
@@ -1956,18 +2010,17 @@ function Builder() {
           
           if (hoverRules) {
             css += `
-              [data-element-id="${el.id}"] > * {
-                transition: all ${speed}s ease-in-out !important;
+              [data-element-id="${el.id}"] .aos-element {
+                transition: background-color ${speed}s ease-in-out, color ${speed}s ease-in-out, opacity ${speed}s ease-in-out, transform ${speed}s ease-in-out, box-shadow ${speed}s ease-in-out, border-color ${speed}s ease-in-out !important;
               }
               [data-element-id="${el.id}"] {
-                transition: all ${speed}s ease-in-out !important;
                 cursor: pointer;
               }
-              [data-element-id="${el.id}"]:hover {
+              [data-element-id="${el.id}"]:hover .aos-element {
                 ${hoverRules}
               }
-              [data-element-id="${el.id}"]:hover > * {
-                ${hoverRules}
+              [data-element-id="${el.id}"]:hover .aos-element * {
+                ${el.hoverStyles.color ? `color: ${el.hoverStyles.color} !important;` : ''}
               }
             `;
           }
@@ -2408,6 +2461,38 @@ function Builder() {
       );
     }
 
+    if (el.type === 'shape') {
+      const shapeType = el.content?.shapeType || 'rectangle';
+      let shapeStyle = {};
+      if (shapeType === 'circle') {
+        shapeStyle.borderRadius = '50%';
+      } else if (shapeType === 'triangle') {
+        shapeStyle.clipPath = 'polygon(50% 0%, 0% 100%, 100% 100%)';
+      }
+      return wrapWithRnd(
+        <div style={{ width: '100%', height: '100%', ...shapeStyle, ...styles }} />
+      );
+    }
+
+    if (el.type === 'link') {
+      return wrapWithRnd(
+        <a 
+          href={el.content?.link || '#'} 
+          onClick={(e) => { e.preventDefault(); }} 
+          style={{ 
+            display: 'inline-block', 
+            width: '100%', 
+            height: '100%', 
+            color: 'inherit', 
+            textDecoration: 'inherit',
+            ...styles 
+          }}
+        >
+          {el.content?.text || 'Link'}
+        </a>
+      );
+    }
+
     return null;
   };
 
@@ -2837,6 +2922,24 @@ function Builder() {
                       style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab' }}
                     >
                       <Plus size={10} /> Spacer
+                    </button>
+                    <button 
+                      draggable 
+                      onDragStart={(e) => e.dataTransfer.setData("elementType", "shape")}
+                      onClick={() => handleAddElement('shape')} 
+                      className="btn-secondary" 
+                      style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab' }}
+                    >
+                      <Square size={18} /> Shape
+                    </button>
+                    <button 
+                      draggable 
+                      onDragStart={(e) => e.dataTransfer.setData("elementType", "link")}
+                      onClick={() => handleAddElement('link')} 
+                      className="btn-secondary" 
+                      style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab' }}
+                    >
+                      <Link2 size={18} /> Link
                     </button>
                   </div>
 
@@ -3564,6 +3667,53 @@ function Builder() {
                     </>
                   )}
 
+                  {selectedElement.type === 'shape' && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <label>Shape Type</label>
+                      <select
+                        value={selectedElement.content?.shapeType || 'rectangle'}
+                        onChange={(e) => updateSelectedElement({ content: { shapeType: e.target.value } })}
+                      >
+                        <option value="rectangle">Rectangle</option>
+                        <option value="circle">Circle</option>
+                        <option value="triangle">Triangle</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {selectedElement.type === 'link' && (
+                    <>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label>Link Text</label>
+                        <input
+                          type="text"
+                          value={selectedElement.content?.text || ''}
+                          onChange={(e) => updateSelectedElement({ content: { text: e.target.value } })}
+                          placeholder="e.g. Learn More"
+                        />
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label>Link Destination URL</label>
+                        <input
+                          type="text"
+                          value={selectedElement.content?.link || ''}
+                          onChange={(e) => updateSelectedElement({ content: { link: e.target.value } })}
+                          placeholder="e.g. https://google.com"
+                        />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedElement.content?.openInNewTab || false}
+                          onChange={(e) => updateSelectedElement({ content: { openInNewTab: e.target.checked } })}
+                          id="linkNewTab"
+                          style={{ width: 'auto', cursor: 'pointer' }}
+                        />
+                        <label htmlFor="linkNewTab" style={{ margin: 0, cursor: 'pointer' }}>Open in New Tab</label>
+                      </div>
+                    </>
+                  )}
+
                   {selectedElement.type === 'form' && (
                     <>
                       <div style={{ marginBottom: '12px' }}>
@@ -4208,7 +4358,105 @@ function Builder() {
                   )}
                 </div>
               </div>
-            ) : (
+            ) : selectedSectionId ? (() => {
+              const sec = activeLayout.find(s => s.id === selectedSectionId);
+              if (!sec) return null;
+              return (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
+                    <h3 style={{ fontSize: '14px', fontWeight: 'bold' }}>Section Settings</h3>
+                    <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 'bold', padding: '2px 6px', background: 'var(--primary-glow)', borderRadius: '4px' }}>SECTION</span>
+                  </div>
+
+                  <div style={{ marginBottom: '20px' }}>
+                    <h4 style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Spacing & Size</h4>
+                    <div style={{ marginBottom: '12px' }}>
+                      <label>Padding Top (px)</label>
+                      <input 
+                        type="number" 
+                        value={sec.settings?.paddingTop || '120'} 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const nextLayout = activeLayout.map(s => s.id === sec.id ? { ...s, settings: { ...s.settings, paddingTop: val } } : s);
+                          updateLayout(nextLayout);
+                        }}
+                      />
+                    </div>
+                    <div style={{ marginBottom: '12px' }}>
+                      <label>Padding Bottom (px)</label>
+                      <input 
+                        type="number" 
+                        value={sec.settings?.paddingBottom || '120'} 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const nextLayout = activeLayout.map(s => s.id === sec.id ? { ...s, settings: { ...s.settings, paddingBottom: val } } : s);
+                          updateLayout(nextLayout);
+                        }}
+                      />
+                    </div>
+                    <div style={{ marginBottom: '12px' }}>
+                      <label>Container Max Width (px / %)</label>
+                      <input 
+                        type="text" 
+                        value={sec.settings?.containerWidth || '1200px'} 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const nextLayout = activeLayout.map(s => s.id === sec.id ? { ...s, settings: { ...s.settings, containerWidth: val } } : s);
+                          updateLayout(nextLayout);
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: '20px' }}>
+                    <h4 style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Background Color</h4>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                      <input
+                        type="checkbox"
+                        checked={sec.settings?.useGlobalBackground !== false}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          const nextLayout = activeLayout.map(s => s.id === sec.id ? { ...s, settings: { ...s.settings, useGlobalBackground: val } } : s);
+                          updateLayout(nextLayout);
+                        }}
+                        id="secGlobalBg"
+                        style={{ width: 'auto', cursor: 'pointer' }}
+                      />
+                      <label htmlFor="secGlobalBg" style={{ margin: 0, cursor: 'pointer' }}>Match Page Background</label>
+                    </div>
+                    {sec.settings?.useGlobalBackground === false && (
+                      <div style={{ marginBottom: '12px' }}>
+                        <label>Custom Color</label>
+                        <input
+                          type="color"
+                          value={sec.settings?.backgroundColor || '#1e293b'}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const nextLayout = activeLayout.map(s => s.id === sec.id ? { ...s, settings: { ...s.settings, backgroundColor: val } } : s);
+                            updateLayout(nextLayout);
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: '20px', marginTop: '20px' }}>
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Are you sure you want to delete this section?')) {
+                          handleDeleteSection(sec.id);
+                          setSelectedSectionId(null);
+                        }
+                      }}
+                      className="btn-danger"
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', borderRadius: '6px', fontWeight: 'bold' }}
+                    >
+                      <Trash2 size={16} /> Delete Section
+                    </button>
+                  </div>
+                </div>
+              );
+            })() : (
               <div style={{ textAlign: 'center', padding: '40px 10px', color: 'var(--text-secondary)' }}>
                 <Settings size={36} style={{ marginBottom: '15px', color: 'var(--text-muted)' }} />
                 <h4 style={{ fontSize: '14px', fontWeight: 'bold', color: '#fff', marginBottom: '8px' }}>Inspector Panel</h4>
@@ -4216,6 +4464,7 @@ function Builder() {
                   Select any element on the design canvas to configure content and styles here.
                   <br /><br />
                   <strong>Quick Tips:</strong>
+                  <br />• Click a section background to configure section settings
                   <br />• Click + hold <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>Shift</span> to multi-select elements
                   <br />• Drag on canvas to lasso select multiple items
                   <br />• Use the toolbar above for instant actions
