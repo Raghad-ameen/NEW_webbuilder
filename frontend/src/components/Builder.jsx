@@ -54,7 +54,14 @@ function Builder() {
   const [pages, setPages] = useState([]);
   const [activePage, setActivePage] = useState(null);
   const [activeLayout, setActiveLayout] = useState([]);
-  
+
+  // Debounce ref for color inputs — prevents Edge/Chrome from re-rendering on every mouse-drag pixel
+  const colorDebounceRef = useRef({});
+  const debouncedColorUpdate = useCallback((key, updater) => {
+    if (colorDebounceRef.current[key]) clearTimeout(colorDebounceRef.current[key]);
+    colorDebounceRef.current[key] = setTimeout(() => { updater(); }, 80);
+  }, []);
+
   const [selectedElementIds, setSelectedElementIds] = useState([]);
   const selectedElementId = selectedElementIds[0] || null;
   const setSelectedElementId = (id) => {
@@ -70,6 +77,8 @@ function Builder() {
   const [styleClipboard, setStyleClipboard] = useState(null);
   const [showGridGuides, setShowGridGuides] = useState(false);
   const [selectedSectionId, setSelectedSectionId] = useState(null);
+  const [smartSnapEnabled, setSmartSnapEnabled] = useState(true);
+  const [alignmentGuides, setAlignmentGuides] = useState([]);
   
   // Pro Builder Layout States
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(300);
@@ -103,6 +112,137 @@ function Builder() {
   const inlineEditRef = useRef(null);
   const dragStartPositions = useRef({});
   const [clipboard, setClipboard] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Smart alignment configuration
+  const SNAP_THRESHOLD = 8;
+  const GUIDE_COLOR = '#6366f1';
+
+  // Calculate smart alignment guides and snap position
+  const calculateSmartAlignment = (dragElementId, currentX, currentY, elementWidth, elementHeight) => {
+    if (!smartSnapEnabled) return { x: currentX, y: currentY, guides: [] };
+    
+    const guides = [];
+    let snapX = currentX;
+    let snapY = currentY;
+    
+    const allElements = [];
+    activeLayout.forEach(sec => {
+      (sec.elements || []).forEach(el => {
+        if (el.id !== dragElementId) {
+          allElements.push({
+            id: el.id,
+            x: el.x || 0,
+            y: el.y || 0,
+            width: el.width || 100,
+            height: el.height || 50,
+            centerX: (el.x || 0) + (el.width || 100) / 2,
+            centerY: (el.y || 0) + (el.height || 50) / 2,
+            right: (el.x || 0) + (el.width || 100),
+            bottom: (el.y || 0) + (el.height || 50)
+          });
+        }
+      });
+    });
+
+    const canvasBounds = [
+      { x: 0, width: 0, height: 0, id: 'left-edge' },
+      { x: 1200, width: 0, height: 0, id: 'right-edge' },
+      { x: 0, width: 1200, height: 0, id: 'top-edge' },
+      { x: 800, width: 1200, height: 0, id: 'bottom-edge' }
+    ];
+
+    const dragCenterX = currentX + elementWidth / 2;
+    const dragCenterY = currentY + elementHeight / 2;
+    const dragRight = currentX + elementWidth;
+    const dragBottom = currentY + elementHeight;
+
+    const checkAlignment = (target, isVertical) => {
+      const alignments = [];
+      
+      if (isVertical) {
+        if (Math.abs(currentX - target.x) < SNAP_THRESHOLD) {
+          alignments.push({ type: 'left', value: target.x, guide: currentX });
+        }
+        if (Math.abs(dragRight - target.x) < SNAP_THRESHOLD) {
+          alignments.push({ type: 'right', value: target.x - elementWidth, guide: target.x });
+        }
+        if (target.centerX && Math.abs(dragCenterX - target.centerX) < SNAP_THRESHOLD) {
+          alignments.push({ type: 'center', value: target.centerX - elementWidth / 2, guide: target.centerX });
+        }
+        if (target.right && Math.abs(currentX - target.right) < SNAP_THRESHOLD) {
+          alignments.push({ type: 'left-to-right', value: target.right, guide: target.right });
+        }
+      } else {
+        if (Math.abs(currentY - target.y) < SNAP_THRESHOLD) {
+          alignments.push({ type: 'top', value: target.y, guide: currentY });
+        }
+        if (Math.abs(dragBottom - target.y) < SNAP_THRESHOLD) {
+          alignments.push({ type: 'bottom', value: target.y - elementHeight, guide: target.y });
+        }
+        if (target.centerY && Math.abs(dragCenterY - target.centerY) < SNAP_THRESHOLD) {
+          alignments.push({ type: 'center', value: target.centerY - elementHeight / 2, guide: target.centerY });
+        }
+        if (target.bottom && Math.abs(currentY - target.bottom) < SNAP_THRESHOLD) {
+          alignments.push({ type: 'top-to-bottom', value: target.bottom, guide: target.bottom });
+        }
+      }
+      
+      return alignments;
+    };
+
+    const verticalTargets = [...allElements, ...canvasBounds.map(b => ({ ...b, centerX: b.x, right: b.x }))];
+    let bestVerticalSnap = null;
+    let minVerticalDist = SNAP_THRESHOLD;
+
+    verticalTargets.forEach(target => {
+      const alignments = checkAlignment(target, true);
+      alignments.forEach(align => {
+        const dist = Math.abs(currentX - align.value);
+        if (dist < minVerticalDist) {
+          minVerticalDist = dist;
+          bestVerticalSnap = align;
+        }
+      });
+    });
+
+    if (bestVerticalSnap) {
+      snapX = bestVerticalSnap.value;
+      guides.push({
+        type: 'vertical',
+        position: bestVerticalSnap.guide,
+        startY: 0,
+        endY: 800
+      });
+    }
+
+    const horizontalTargets = [...allElements, ...canvasBounds.map(b => ({ ...b, centerY: b.y, bottom: b.y }))];
+    let bestHorizontalSnap = null;
+    let minHorizontalDist = SNAP_THRESHOLD;
+
+    horizontalTargets.forEach(target => {
+      const alignments = checkAlignment(target, false);
+      alignments.forEach(align => {
+        const dist = Math.abs(currentY - align.value);
+        if (dist < minHorizontalDist) {
+          minHorizontalDist = dist;
+          bestHorizontalSnap = align;
+        }
+      });
+    });
+
+    if (bestHorizontalSnap) {
+      snapY = bestHorizontalSnap.value;
+      guides.push({
+        type: 'horizontal',
+        position: bestHorizontalSnap.guide,
+        startX: 0,
+        endX: 1200
+      });
+    }
+
+    return { x: snapX, y: snapY, guides };
+  };
 
   // Migrate old row/column layout to new flat structure
   const migrateLayout = useCallback((layout) => {
@@ -314,7 +454,11 @@ function Builder() {
   useEffect(() => {
     const handleMessage = (event) => {
       if (event.data && event.data.type === 'SWITCH_PAGE') {
-        const targetPage = pages.find(p => p.id === event.data.pageId);
+        // Support matching by pageId (number) OR pageSlug (string)
+        const targetPage = pages.find(p =>
+          (event.data.pageId !== undefined && p.id === event.data.pageId) ||
+          (event.data.pageSlug !== undefined && p.slug === event.data.pageSlug)
+        );
         if (targetPage) {
           handleSwitchPage(targetPage);
         }
@@ -705,21 +849,7 @@ function Builder() {
       ${currentSite.custom_css || ''}
     `;
 
-    let navHtml = '';
-    if (allPages.length > 1) {
-      navHtml = `
-        <nav style="display: flex; justify-content: space-between; align-items: center; padding: 15px 30px; border-bottom: 1px solid rgba(0,0,0,0.06); background: rgba(0,0,0,0.01);">
-          <span style="font-weight: bold; color: var(--primary);">${currentSite.name}</span>
-          <div style="display: flex; gap: 20px; font-size: 14px;">
-            ${allPages.map(p => `
-              <a href="${isLivePreview ? '#' : (p.slug === 'home' ? 'index.html' : `${p.slug}.html`)}" ${isLivePreview ? `onclick="event.preventDefault(); window.parent.postMessage({type: 'SWITCH_PAGE', pageId: ${p.id}}, '*');"` : ''} style="text-decoration: none; color: inherit; font-weight: ${page.id === p.id ? 'bold' : 'normal'}; border-bottom: ${page.id === p.id ? '2px solid var(--primary)' : 'none'}; padding-bottom: 2px;">
-                ${p.title}
-              </a>
-            `).join('')}
-          </div>
-        </nav>
-      `;
-    }
+
 
     let bodyHtml = '';
     const pageLayout = page.layout || [];
@@ -866,7 +996,9 @@ function Builder() {
             wrapStart = `<a href="${value || '#'}" target="${openInNewTab ? '_blank' : '_self'}" rel="noopener noreferrer" style="text-decoration: none; color: inherit; display: block; width: 100%; height: 100%;">`;
             wrapEnd = `</a>`;
           } else if (type === 'page') {
-            wrapStart = `<a href="${value === 'home' ? 'index.html' : `${value}.html`}" style="text-decoration: none; color: inherit; display: block; width: 100%; height: 100%;">`;
+            // Use postMessage so the click is handled by the parent React component
+            // (avoids breaking out of the iframe into React Router via slug.html href)
+            wrapStart = `<a href="#" onclick="event.preventDefault(); window.parent.postMessage({type:'SWITCH_PAGE',pageSlug:'${value}'}, '*');" style="text-decoration: none; color: inherit; display: block; width: 100%; height: 100%; cursor: pointer;">`;
             wrapEnd = `</a>`;
           } else if (type === 'anchor') {
             wrapStart = `<a href="#${value || ''}" style="text-decoration: none; color: inherit; display: block; width: 100%; height: 100%;">`;
@@ -910,9 +1042,9 @@ function Builder() {
       </head>
       <body>
         <div class="preview-wrapper">
-          ${navHtml}
           ${bodyHtml}
         </div>
+
 
         <div id="contact-modal" class="modal-overlay">
           <div class="modal-content">
@@ -1413,7 +1545,7 @@ function Builder() {
       },
       image: {
         type: 'image',
-        content: { src: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80', alt: 'Visual Graphic' },
+        content: { src: '', alt: 'Click to add image' },
         styles: { borderRadius: '6', marginBottom: '15' }
       },
       video: {
@@ -3353,27 +3485,7 @@ function Builder() {
                 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
               ` }} />
 
-              {pages.length > 1 && (
-                <nav style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px', borderBottom: '1px solid rgba(0,0,0,0.06)', background: 'rgba(0,0,0,0.01)' }}>
-                  <span style={{ fontWeight: 'bold', color: site.theme?.primaryColor || '#6366f1' }}>{site.name}</span>
-                  <div style={{ display: 'flex', gap: '20px', fontSize: '14px' }}>
-                    {pages.map(p => (
-                      <span
-                        key={p.id}
-                        onClick={() => handleSwitchPage(p)}
-                        style={{
-                          fontWeight: activePage.id === p.id ? 'bold' : 'normal',
-                          borderBottom: activePage.id === p.id ? `2px solid ${site.theme?.primaryColor || '#6366f1'}` : 'none',
-                          paddingBottom: '2px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {p.title}
-                      </span>
-                    ))}
-                  </div>
-                </nav>
-              )}
+
 
               <div className="builder-canvas-wrapper" style={{ flex: 1, overflowY: 'auto', width: '100%', minHeight: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>
                 {activePage && activeLayout ? (
@@ -3945,7 +4057,7 @@ function Builder() {
                         <input
                           type="color"
                           value={selectedElement.styles?.color || '#333333'}
-                          onChange={(e) => updateSelectedElement({ styles: { color: e.target.value } })}
+                          onChange={(e) => { const v = e.target.value; debouncedColorUpdate('color_1', () => updateSelectedElement({ styles: { color: v } })); }}
                           style={{ height: '35px', padding: '0', border: 'none', cursor: 'pointer' }}
                         />
                       </div>
@@ -3956,7 +4068,7 @@ function Builder() {
                         <input
                           type="color"
                           value={selectedElement.styles?.backgroundColor || '#ffffff'}
-                          onChange={(e) => updateSelectedElement({ styles: { backgroundColor: e.target.value } })}
+                          onChange={(e) => { const v = e.target.value; debouncedColorUpdate('color_2', () => updateSelectedElement({ styles: { backgroundColor: v } })); }}
                           style={{ height: '35px', padding: '0', border: 'none', cursor: 'pointer' }}
                         />
                       </div>
@@ -3970,7 +4082,7 @@ function Builder() {
                         <input
                           type="color"
                           value={selectedElement.styles?.buttonBgColor || '#6366f1'}
-                          onChange={(e) => updateSelectedElement({ styles: { buttonBgColor: e.target.value } })}
+                          onChange={(e) => { const v = e.target.value; debouncedColorUpdate('color_3', () => updateSelectedElement({ styles: { buttonBgColor: v } })); }}
                           style={{ height: '35px', padding: '0', border: 'none', cursor: 'pointer' }}
                         />
                       </div>
@@ -3979,7 +4091,7 @@ function Builder() {
                         <input
                           type="color"
                           value={selectedElement.styles?.buttonTextColor || '#ffffff'}
-                          onChange={(e) => updateSelectedElement({ styles: { buttonTextColor: e.target.value } })}
+                          onChange={(e) => { const v = e.target.value; debouncedColorUpdate('color_4', () => updateSelectedElement({ styles: { buttonTextColor: v } })); }}
                           style={{ height: '35px', padding: '0', border: 'none', cursor: 'pointer' }}
                         />
                       </div>
@@ -4045,7 +4157,7 @@ function Builder() {
                       <input
                         type="color"
                         value={selectedElement.styles?.borderColor || '#6366f1'}
-                        onChange={(e) => updateSelectedElement({ styles: { borderColor: e.target.value } })}
+                        onChange={(e) => { const v = e.target.value; debouncedColorUpdate('color_5', () => updateSelectedElement({ styles: { borderColor: v } })); }}
                         style={{ height: '32px', padding: '0', border: 'none', cursor: 'pointer' }}
                       />
                     </div>
@@ -4095,7 +4207,7 @@ function Builder() {
                       <input
                         type="color"
                         value={selectedElement.hoverStyles?.backgroundColor || '#6366f1'}
-                        onChange={(e) => updateSelectedElement({ hoverStyles: { backgroundColor: e.target.value } })}
+                        onChange={(e) => { const v = e.target.value; debouncedColorUpdate('color_6', () => updateSelectedElement({ hoverStyles: { backgroundColor: v } })); }}
                         style={{ height: '35px', padding: '0', border: 'none', cursor: 'pointer' }}
                       />
                     </div>
@@ -4104,7 +4216,7 @@ function Builder() {
                       <input
                         type="color"
                         value={selectedElement.hoverStyles?.color || '#ffffff'}
-                        onChange={(e) => updateSelectedElement({ hoverStyles: { color: e.target.value } })}
+                        onChange={(e) => { const v = e.target.value; debouncedColorUpdate('color_7', () => updateSelectedElement({ hoverStyles: { color: v } })); }}
                         style={{ height: '35px', padding: '0', border: 'none', cursor: 'pointer' }}
                       />
                     </div>
