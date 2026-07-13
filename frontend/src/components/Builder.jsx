@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Laptop, Tablet, Smartphone, Eye, EyeOff, Save, Check, Globe,
@@ -6,7 +6,7 @@ import {
   Copy, Settings, Palette, FileCode, Layers, CheckCircle, RefreshCw, Sparkles, Mail,
   ClipboardCopy, ClipboardPaste, AlignLeft, AlignCenter, AlignRight,
   AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
-  Move, Group, Ungroup, Download, X, Circle, Triangle, Link2
+  Move, Group, Ungroup, Download, X, Circle, Triangle, Link2, Search, LayoutList
 } from 'lucide-react';
 import { TEMPLATES } from '../utils/TemplateData';
 import { Rnd } from 'react-rnd';
@@ -47,6 +47,116 @@ const apiFetch = async (url, options = {}) => {
   return response;
 };
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEARCH SYSTEM — decoupled from UI rendering
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Pure filter function — zero React deps, easily swapped for a backend call.
+ *
+ * Future API swap:
+ *   if (useBackend) {
+ *     return apiFetch(`/api/elements/?q=${encodeURIComponent(query)}&page_id=${pageId}`)
+ *       .then(r => r.json()).then(data => new Set(data.map(e => e.id)));
+ *   }
+ *
+ * @param {Array}  layout  — activeLayout (sections with elements)
+ * @param {string} query   — raw search string from user input
+ * @returns {Set<string>|null} — matched element IDs, or null when search is cleared
+ */
+function filterElements(layout, query) {
+  if (!query || !query.trim()) return null; // null = no filter active, show everything
+
+  const q = query.toLowerCase().trim();
+  const matched = new Set();
+
+  layout.forEach(sec => {
+    (sec.elements || []).forEach(el => {
+      const checks = [
+        el.type,                        // element type: "heading", "button" …
+        el.content?.text,               // text content
+        el.content?.label,              // form field label
+        el.content?.alt,                // image alt text
+        el.content?.placeholder,        // input placeholder
+        el.content?.src,                // image/video src (filename search)
+        el.id,                          // direct ID search
+      ];
+      if (checks.some(v => v && String(v).toLowerCase().includes(q))) {
+        matched.add(el.id);
+      }
+    });
+  });
+
+  return matched;
+}
+
+/**
+ * Presentational-only search input.
+ * Does ONE thing: calls onQueryChange when the user types.
+ * Contains NO filter logic.
+ */
+function SearchInput({ value, onQueryChange, placeholder = 'Search elements…' }) {
+  return (
+    <div style={{ position: 'relative', marginBottom: '12px' }}>
+      <Search
+        size={13}
+        style={{
+          position: 'absolute',
+          left: '10px',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          color: '#64748b',
+          pointerEvents: 'none',
+        }}
+      />
+      <input
+        id="builder-search-input"
+        type="text"
+        value={value}
+        onChange={e => onQueryChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          width: '100%',
+          boxSizing: 'border-box',
+          padding: '7px 10px 7px 30px',
+          background: 'rgba(255,255,255,0.05)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: '8px',
+          color: '#e2e8f0',
+          fontSize: '12px',
+          outline: 'none',
+          transition: 'border-color 0.15s',
+        }}
+        onFocus={e => { e.target.style.borderColor = '#6366f1'; }}
+        onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+      />
+      {value && (
+        <button
+          onClick={() => onQueryChange('')}
+          style={{
+            position: 'absolute',
+            right: '8px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'none',
+            border: 'none',
+            color: '#64748b',
+            cursor: 'pointer',
+            padding: '2px',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+          title="Clear search"
+        >
+          <X size={11} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 function Builder() {
   const { siteId } = useParams();
   const navigate = useNavigate();
@@ -54,6 +164,18 @@ function Builder() {
   const [pages, setPages] = useState([]);
   const [activePage, setActivePage] = useState(null);
   const [activeLayout, setActiveLayout] = useState([]);
+
+  // ── SEARCH STATE (brain) ──────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('');
+  // Derived: Set of matched element IDs (null = no filter)
+  // Recomputes only when activeLayout or searchQuery changes — never in render.
+  const matchedElementIds = useMemo(
+    () => filterElements(activeLayout, searchQuery),
+    [activeLayout, searchQuery]
+  );
+  const isSearchActive = matchedElementIds !== null;
+  // ─────────────────────────────────────────────────────────────────────────
+
 
   // Debounce ref for color inputs — prevents Edge/Chrome from re-rendering on every mouse-drag pixel
   const colorDebounceRef = useRef({});
@@ -115,7 +237,7 @@ function Builder() {
   const [isDragging, setIsDragging] = useState(false);
 
   // Smart alignment configuration
-  const SNAP_THRESHOLD = 8;
+  const SNAP_THRESHOLD = 5;
   const GUIDE_COLOR = '#6366f1';
 
   // Calculate smart alignment guides and snap position
@@ -126,123 +248,240 @@ function Builder() {
     let snapX = currentX;
     let snapY = currentY;
     
+    // Find which section this element belongs to and get container width
+    let containerW = 1200;
+    activeLayout.forEach(sec => {
+      (sec.elements || []).forEach(el => {
+        if (el.id === dragElementId) {
+          const cw = sec.settings?.containerWidth || '1200px';
+          containerW = parseInt(cw) || 1200;
+        }
+      });
+    });
+
+    // Collect all sibling elements in the same section
     const allElements = [];
     activeLayout.forEach(sec => {
       (sec.elements || []).forEach(el => {
-        if (el.id !== dragElementId) {
+        if (el.id !== dragElementId && !selectedElementIds.includes(el.id)) {
+          const w = el.width || 100;
+          const h = el.height || 50;
           allElements.push({
             id: el.id,
-            x: el.x || 0,
-            y: el.y || 0,
-            width: el.width || 100,
-            height: el.height || 50,
-            centerX: (el.x || 0) + (el.width || 100) / 2,
-            centerY: (el.y || 0) + (el.height || 50) / 2,
-            right: (el.x || 0) + (el.width || 100),
-            bottom: (el.y || 0) + (el.height || 50)
+            left: el.x || 0,
+            top: el.y || 0,
+            width: w,
+            height: h,
+            centerX: (el.x || 0) + w / 2,
+            centerY: (el.y || 0) + h / 2,
+            right: (el.x || 0) + w,
+            bottom: (el.y || 0) + h
           });
         }
       });
     });
 
-    const canvasBounds = [
-      { x: 0, width: 0, height: 0, id: 'left-edge' },
-      { x: 1200, width: 0, height: 0, id: 'right-edge' },
-      { x: 0, width: 1200, height: 0, id: 'top-edge' },
-      { x: 800, width: 1200, height: 0, id: 'bottom-edge' }
-    ];
-
-    const dragCenterX = currentX + elementWidth / 2;
-    const dragCenterY = currentY + elementHeight / 2;
+    // Dragged element edges
+    const dragLeft = currentX;
+    const dragTop = currentY;
     const dragRight = currentX + elementWidth;
     const dragBottom = currentY + elementHeight;
+    const dragCenterX = currentX + elementWidth / 2;
+    const dragCenterY = currentY + elementHeight / 2;
 
-    const checkAlignment = (target, isVertical) => {
-      const alignments = [];
-      
-      if (isVertical) {
-        if (Math.abs(currentX - target.x) < SNAP_THRESHOLD) {
-          alignments.push({ type: 'left', value: target.x, guide: currentX });
-        }
-        if (Math.abs(dragRight - target.x) < SNAP_THRESHOLD) {
-          alignments.push({ type: 'right', value: target.x - elementWidth, guide: target.x });
-        }
-        if (target.centerX && Math.abs(dragCenterX - target.centerX) < SNAP_THRESHOLD) {
-          alignments.push({ type: 'center', value: target.centerX - elementWidth / 2, guide: target.centerX });
-        }
-        if (target.right && Math.abs(currentX - target.right) < SNAP_THRESHOLD) {
-          alignments.push({ type: 'left-to-right', value: target.right, guide: target.right });
-        }
-      } else {
-        if (Math.abs(currentY - target.y) < SNAP_THRESHOLD) {
-          alignments.push({ type: 'top', value: target.y, guide: currentY });
-        }
-        if (Math.abs(dragBottom - target.y) < SNAP_THRESHOLD) {
-          alignments.push({ type: 'bottom', value: target.y - elementHeight, guide: target.y });
-        }
-        if (target.centerY && Math.abs(dragCenterY - target.centerY) < SNAP_THRESHOLD) {
-          alignments.push({ type: 'center', value: target.centerY - elementHeight / 2, guide: target.centerY });
-        }
-        if (target.bottom && Math.abs(currentY - target.bottom) < SNAP_THRESHOLD) {
-          alignments.push({ type: 'top-to-bottom', value: target.bottom, guide: target.bottom });
-        }
+    // Container center
+    const containerCenterX = containerW / 2;
+
+    let bestSnapX = null;
+    let bestSnapXDist = SNAP_THRESHOLD;
+    let bestSnapY = null;
+    let bestSnapYDist = SNAP_THRESHOLD;
+
+    const PROXIMITY_LIMIT = 150; // max distance on opposite axis to allow snapping
+
+    // Helper: check vertical (X-axis) alignment
+    const checkVertical = (targetX, sourceType, targetEl) => {
+      if (targetEl) {
+        const isNearY = dragBottom >= targetEl.top - PROXIMITY_LIMIT && dragTop <= targetEl.bottom + PROXIMITY_LIMIT;
+        if (!isNearY) return;
       }
       
-      return alignments;
+      // Left edge of dragged -> targetX
+      let d = Math.abs(dragLeft - targetX);
+      if (d < bestSnapXDist) {
+        bestSnapXDist = d;
+        bestSnapX = { snapTo: targetX, guideX: targetX, source: sourceType, target: targetEl };
+      }
+      // Right edge of dragged -> targetX
+      d = Math.abs(dragRight - targetX);
+      if (d < bestSnapXDist) {
+        bestSnapXDist = d;
+        bestSnapX = { snapTo: targetX - elementWidth, guideX: targetX, source: sourceType, target: targetEl };
+      }
+      // Center of dragged -> targetX
+      d = Math.abs(dragCenterX - targetX);
+      if (d < bestSnapXDist) {
+        bestSnapXDist = d;
+        bestSnapX = { snapTo: targetX - elementWidth / 2, guideX: targetX, source: sourceType, target: targetEl };
+      }
     };
 
-    const verticalTargets = [...allElements, ...canvasBounds.map(b => ({ ...b, centerX: b.x, right: b.x }))];
-    let bestVerticalSnap = null;
-    let minVerticalDist = SNAP_THRESHOLD;
+    // Helper: check horizontal (Y-axis) alignment
+    const checkHorizontal = (targetY, sourceType, targetEl) => {
+      if (targetEl) {
+        const isNearX = dragRight >= targetEl.left - PROXIMITY_LIMIT && dragLeft <= targetEl.right + PROXIMITY_LIMIT;
+        if (!isNearX) return;
+      }
 
-    verticalTargets.forEach(target => {
-      const alignments = checkAlignment(target, true);
-      alignments.forEach(align => {
-        const dist = Math.abs(currentX - align.value);
-        if (dist < minVerticalDist) {
-          minVerticalDist = dist;
-          bestVerticalSnap = align;
-        }
-      });
+      let d = Math.abs(dragTop - targetY);
+      if (d < bestSnapYDist) {
+        bestSnapYDist = d;
+        bestSnapY = { snapTo: targetY, guideY: targetY, source: sourceType, target: targetEl };
+      }
+      d = Math.abs(dragBottom - targetY);
+      if (d < bestSnapYDist) {
+        bestSnapYDist = d;
+        bestSnapY = { snapTo: targetY - elementHeight, guideY: targetY, source: sourceType, target: targetEl };
+      }
+      d = Math.abs(dragCenterY - targetY);
+      if (d < bestSnapYDist) {
+        bestSnapYDist = d;
+        bestSnapY = { snapTo: targetY - elementHeight / 2, guideY: targetY, source: sourceType, target: targetEl };
+      }
+    };
+
+    // Check container edges & center
+    checkVertical(0, 'container');
+    checkVertical(containerW, 'container');
+    checkVertical(containerCenterX, 'container-center');
+
+    // Check against all other elements
+    allElements.forEach(t => {
+      checkVertical(t.left, 'element', t);
+      checkVertical(t.right, 'element', t);
+      checkVertical(t.centerX, 'element-center', t);
+      checkHorizontal(t.top, 'element', t);
+      checkHorizontal(t.bottom, 'element', t);
+      checkHorizontal(t.centerY, 'element-center', t);
     });
 
-    if (bestVerticalSnap) {
-      snapX = bestVerticalSnap.value;
-      guides.push({
-        type: 'vertical',
-        position: bestVerticalSnap.guide,
-        startY: 0,
-        endY: 800
-      });
+    // Apply best snap and build guide lines
+    if (bestSnapX) {
+      snapX = bestSnapX.snapTo;
+      const gx = bestSnapX.guideX;
+      // Determine Y extent of the guide line
+      let minY = snapY;
+      let maxY = snapY + elementHeight;
+      if (bestSnapX.target) {
+        minY = Math.min(minY, bestSnapX.target.top);
+        maxY = Math.max(maxY, bestSnapX.target.bottom);
+      }
+      guides.push({ type: 'vertical', position: gx, startY: minY - 20, endY: maxY + 20 });
     }
 
-    const horizontalTargets = [...allElements, ...canvasBounds.map(b => ({ ...b, centerY: b.y, bottom: b.y }))];
-    let bestHorizontalSnap = null;
-    let minHorizontalDist = SNAP_THRESHOLD;
+    if (bestSnapY) {
+      snapY = bestSnapY.snapTo;
+      const gy = bestSnapY.guideY;
+      let minX = snapX;
+      let maxX = snapX + elementWidth;
+      if (bestSnapY.target) {
+        minX = Math.min(minX, bestSnapY.target.left);
+        maxX = Math.max(maxX, bestSnapY.target.right);
+      }
+      guides.push({ type: 'horizontal', position: gy, startX: minX - 20, endX: maxX + 20 });
+    }
 
-    horizontalTargets.forEach(target => {
-      const alignments = checkAlignment(target, false);
-      alignments.forEach(align => {
-        const dist = Math.abs(currentY - align.value);
-        if (dist < minHorizontalDist) {
-          minHorizontalDist = dist;
-          bestHorizontalSnap = align;
+    // ── EQUAL-SPACING GUIDES ───────────────────────────────────────────────────
+    // Find elements to the LEFT and RIGHT of the dragged element (same horizontal band)
+    const BAND_TOLERANCE = elementHeight * 0.6; // vertical overlap threshold
+    const dragMidY = dragTop + elementHeight / 2;
+
+    const horizontalNeighbours = allElements
+      .filter(t => Math.abs(t.top + t.height / 2 - dragMidY) < BAND_TOLERANCE + t.height / 2)
+      .sort((a, b) => a.left - b.left);
+
+    // Elements strictly to the left and right
+    const leftNeighbours  = horizontalNeighbours.filter(t => t.right <= dragLeft).sort((a, b) => b.right - a.right);
+    const rightNeighbours = horizontalNeighbours.filter(t => t.left  >= dragRight).sort((a, b) => a.left - b.left);
+
+    if (leftNeighbours.length > 0 && rightNeighbours.length > 0) {
+      const nearLeft  = leftNeighbours[0];
+      const nearRight = rightNeighbours[0];
+      const gapLeft   = dragLeft  - nearLeft.right;   // space between left neighbour's right edge and dragged left
+      const gapRight  = nearRight.left - dragRight;   // space between dragged right edge and right neighbour's left
+
+      if (Math.abs(gapLeft - gapRight) < SNAP_THRESHOLD * 2) {
+        // Equal spacing detected — snap to perfectly equal position
+        const totalSpan = nearRight.right - nearLeft.left;
+        const equalGap  = (totalSpan - elementWidth) / 2;
+        const snapXEqual = nearLeft.right + equalGap;
+
+        if (Math.abs(snapXEqual - snapX) < SNAP_THRESHOLD * 3) {
+          snapX = snapXEqual;
+          const guideY = Math.min(dragTop, nearLeft.top, nearRight.top) - 18;
+          const labelGap = Math.round(equalGap);
+          // Left spacing bracket
+          guides.push({ type: 'spacing', orientation: 'horizontal', x1: nearLeft.right, x2: snapXEqual, y: guideY, label: `${labelGap}px` });
+          // Right spacing bracket
+          guides.push({ type: 'spacing', orientation: 'horizontal', x1: snapXEqual + elementWidth, x2: nearRight.left, y: guideY, label: `${labelGap}px` });
+        } else {
+          // Not snapping but still show measurement
+          const guideY = Math.min(dragTop, nearLeft.top, nearRight.top) - 18;
+          guides.push({ type: 'spacing', orientation: 'horizontal', x1: nearLeft.right, x2: dragLeft, y: guideY, label: `${Math.round(gapLeft)}px` });
+          guides.push({ type: 'spacing', orientation: 'horizontal', x1: dragRight, x2: nearRight.left, y: guideY, label: `${Math.round(gapRight)}px`, unequal: gapLeft !== gapRight });
         }
-      });
-    });
-
-    if (bestHorizontalSnap) {
-      snapY = bestHorizontalSnap.value;
-      guides.push({
-        type: 'horizontal',
-        position: bestHorizontalSnap.guide,
-        startX: 0,
-        endX: 1200
-      });
+      } else {
+        // Not equal — show gap measurements so user knows the difference
+        const guideY = Math.min(dragTop, nearLeft.top, nearRight.top) - 18;
+        guides.push({ type: 'spacing', orientation: 'horizontal', x1: nearLeft.right, x2: dragLeft, y: guideY, label: `${Math.round(gapLeft)}px`, unequal: true });
+        guides.push({ type: 'spacing', orientation: 'horizontal', x1: dragRight, x2: nearRight.left, y: guideY, label: `${Math.round(gapRight)}px`, unequal: true });
+      }
     }
+
+    // Vertical equal-spacing (elements above and below)
+    const VBAND_TOLERANCE = elementWidth * 0.6;
+    const dragMidX = dragLeft + elementWidth / 2;
+
+    const verticalNeighbours = allElements
+      .filter(t => Math.abs(t.left + t.width / 2 - dragMidX) < VBAND_TOLERANCE + t.width / 2)
+      .sort((a, b) => a.top - b.top);
+
+    const topNeighbours    = verticalNeighbours.filter(t => t.bottom <= dragTop).sort((a, b) => b.bottom - a.bottom);
+    const bottomNeighbours = verticalNeighbours.filter(t => t.top >= dragBottom).sort((a, b) => a.top - b.top);
+
+    if (topNeighbours.length > 0 && bottomNeighbours.length > 0) {
+      const nearTop    = topNeighbours[0];
+      const nearBottom = bottomNeighbours[0];
+      const gapAbove   = dragTop    - nearTop.bottom;
+      const gapBelow   = nearBottom.top - dragBottom;
+
+      if (Math.abs(gapAbove - gapBelow) < SNAP_THRESHOLD * 2) {
+        const totalSpan = nearBottom.bottom - nearTop.top;
+        const equalGap  = (totalSpan - elementHeight) / 2;
+        const snapYEqual = nearTop.bottom + equalGap;
+
+        if (Math.abs(snapYEqual - snapY) < SNAP_THRESHOLD * 3) {
+          snapY = snapYEqual;
+          const guideX = Math.min(dragLeft, nearTop.left, nearBottom.left) - 18;
+          const labelGap = Math.round(equalGap);
+          guides.push({ type: 'spacing', orientation: 'vertical', y1: nearTop.bottom, y2: snapYEqual, x: guideX, label: `${labelGap}px` });
+          guides.push({ type: 'spacing', orientation: 'vertical', y1: snapYEqual + elementHeight, y2: nearBottom.top, x: guideX, label: `${labelGap}px` });
+        } else {
+          const guideX = Math.min(dragLeft, nearTop.left, nearBottom.left) - 18;
+          guides.push({ type: 'spacing', orientation: 'vertical', y1: nearTop.bottom, y2: dragTop, x: guideX, label: `${Math.round(gapAbove)}px` });
+          guides.push({ type: 'spacing', orientation: 'vertical', y1: dragBottom, y2: nearBottom.top, x: guideX, label: `${Math.round(gapBelow)}px`, unequal: true });
+        }
+      } else {
+        const guideX = Math.min(dragLeft, nearTop.left, nearBottom.left) - 18;
+        guides.push({ type: 'spacing', orientation: 'vertical', y1: nearTop.bottom, y2: dragTop, x: guideX, label: `${Math.round(gapAbove)}px`, unequal: true });
+        guides.push({ type: 'spacing', orientation: 'vertical', y1: dragBottom, y2: nearBottom.top, x: guideX, label: `${Math.round(gapBelow)}px`, unequal: true });
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
 
     return { x: snapX, y: snapY, guides };
   };
+
 
   // Migrate old row/column layout to new flat structure
   const migrateLayout = useCallback((layout) => {
@@ -844,6 +1083,52 @@ function Builder() {
 
       .modal-close:hover { opacity: 1; }
 
+      .search-dropdown-results {
+        position: absolute;
+        top: calc(100% + 5px);
+        left: 0;
+        width: 100%;
+        max-height: 400px;
+        overflow-y: auto;
+        background: #ffffff;
+        border-radius: 8px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        z-index: 10000;
+        border: 1px solid #e5e7eb;
+        display: none;
+      }
+      .search-result-item {
+        display: flex;
+        padding: 12px;
+        border-bottom: 1px solid #f3f4f6;
+        text-decoration: none;
+        color: #111827;
+        align-items: center;
+        gap: 12px;
+        transition: background 0.2s;
+      }
+      .search-result-item:hover { background: #f9fafb; }
+      .search-result-item:last-child { border-bottom: none; }
+      .search-result-item img {
+        width: 40px;
+        height: 40px;
+        object-fit: cover;
+        border-radius: 6px;
+        flex-shrink: 0;
+      }
+      .search-result-content { flex: 1; overflow: hidden; }
+      .search-result-title {
+        font-weight: 600; font-size: 14px; margin-bottom: 2px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .search-result-desc {
+        font-size: 12px; color: #6b7280;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .search-loading, .search-empty {
+        padding: 15px; text-align: center; color: #6b7280; font-size: 13px;
+      }
+
       ${animationKeyframes}
       ${hoverStylesCss}
       ${currentSite.custom_css || ''}
@@ -977,15 +1262,52 @@ function Builder() {
           `;
         } else if (el.type === 'shape') {
           const shapeType = el.content?.shapeType || 'rectangle';
-          let shapeStyle = '';
-          if (shapeType === 'circle') {
-            shapeStyle += 'border-radius: 50%; ';
-          } else if (shapeType === 'triangle') {
-            shapeStyle += 'clip-path: polygon(50% 0%, 0% 100%, 100% 100%); -webkit-clip-path: polygon(50% 0%, 0% 100%, 100% 100%); ';
-          }
-          innerMarkup = `<div style="width: 100%; height: 100%; ${shapeStyle}"></div>`;
+          const fillType = el.content?.fillType || 'filled';
+          const strokeWidth = el.content?.borderWidth || 4;
+          
+          const bgColor = el.styles?.backgroundColor || '#6366f1';
+          const isBorder = fillType === 'border';
+          const fill = isBorder ? 'transparent' : bgColor;
+          const stroke = isBorder ? bgColor : 'none';
+          const sw = isBorder ? strokeWidth : 0;
+          const filter = el.styles?.boxShadow ? `filter: drop-shadow(${el.styles.boxShadow});` : '';
+
+          let pathStr = '';
+          if (shapeType === 'circle') pathStr = `<ellipse cx="50" cy="50" rx="50" ry="50" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke" />`;
+          else if (shapeType === 'triangle') pathStr = `<polygon points="50,0 100,100 0,100" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke" />`;
+          else if (shapeType === 'pentagon') pathStr = `<polygon points="50,0 100,38 82,100 18,100 0,38" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke" />`;
+          else if (shapeType === 'hexagon') pathStr = `<polygon points="25,0 75,0 100,50 75,100 25,100 0,50" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke" />`;
+          else if (shapeType === 'octagon') pathStr = `<polygon points="30,0 70,0 100,30 100,70 70,100 30,100 0,70 0,30" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke" />`;
+          else if (shapeType === 'star') pathStr = `<polygon points="50,0 61,35 98,35 68,57 79,91 50,70 21,91 32,57 2,35 39,35" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke" />`;
+          else if (shapeType === 'diamond') pathStr = `<polygon points="50,0 100,50 50,100 0,50" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke" />`;
+          else pathStr = `<rect x="0" y="0" width="100" height="100" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke" />`;
+
+          // Clear backgroundColor and boxShadow from styles string as they are handled by SVG
+          el.styles.backgroundColor = 'transparent';
+          el.styles.boxShadow = 'none';
+
+          innerMarkup = `
+            <div style="width: 100%; height: 100%;">
+              <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="overflow: visible; ${filter}">
+                ${pathStr}
+              </svg>
+            </div>
+          `;
         } else if (el.type === 'link') {
           innerMarkup = `<a href="${el.content?.link || '#'}" style="color: inherit; text-decoration: inherit; display: inline-block; width: 100%; height: 100%;">${el.content?.text || 'Link'}</a>`;
+        } else if (el.type === 'site_search') {
+          innerMarkup = `
+            <div style="display: flex; align-items: center; width: 100%; height: 100%; position: relative;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 10px; opacity: 0.7;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input 
+                type="text" 
+                data-api-endpoint="${el.content?.apiEndpoint || ''}"
+                placeholder="${el.content?.placeholder || 'Search this site...'}" 
+                oninput="window.runSiteSearch(this)"
+                style="padding: 10px 12px 10px 35px; width: 100%; height: 100%; border-radius: inherit; border: none; background: transparent; color: inherit; font-size: 14px; outline: none;" 
+              />
+            </div>
+          `;
         }
 
         let wrapStart = '';
@@ -1013,7 +1335,7 @@ function Builder() {
         }
 
         bodyHtml += `
-          <div class="element-wrapper" data-element-id="${el.id}" style="${elStyles}"${aosAttrs}>
+          <div class="element-wrapper searchable-site-element" data-element-id="${el.id}" style="${elStyles}"${aosAttrs}>
             ${wrapStart}
             ${innerMarkup}
             ${wrapEnd}
@@ -1163,6 +1485,68 @@ function Builder() {
               });
             }, { threshold: 0.1 });
             document.querySelectorAll('[data-aos-name]').forEach(el => observer.observe(el));
+          });
+
+          let searchTimeout = null;
+          window.runSiteSearch = function(inputEl) {
+            const query = inputEl.value.trim();
+            const endpoint = inputEl.getAttribute('data-api-endpoint');
+            const wrapper = inputEl.closest('.element-wrapper');
+            let dropdown = wrapper.querySelector('.search-dropdown-results');
+            
+            if (!dropdown) {
+              dropdown = document.createElement('div');
+              dropdown.className = 'search-dropdown-results';
+              wrapper.style.position = 'relative';
+              wrapper.appendChild(dropdown);
+            }
+
+            if (!query || !endpoint) {
+              dropdown.style.display = 'none';
+              return;
+            }
+
+            if (searchTimeout) clearTimeout(searchTimeout);
+            
+            dropdown.style.display = 'block';
+            dropdown.innerHTML = '<div class="search-loading">Searching...</div>';
+
+            searchTimeout = setTimeout(async () => {
+              try {
+                // Ensure endpoint has query parameter structure
+                const url = endpoint.includes('?') ? \`\${endpoint}\${encodeURIComponent(query)}\` : \`\${endpoint}?q=\${encodeURIComponent(query)}\`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const results = await response.json();
+                
+                if (!Array.isArray(results) || results.length === 0) {
+                  dropdown.innerHTML = '<div class="search-empty">No results found</div>';
+                  return;
+                }
+
+                dropdown.innerHTML = results.map(item => \`
+                  <a href="\${item.url || '#'}" class="search-result-item">
+                    \${item.image ? \`<img src="\${item.image}" alt="\${item.title}">\` : ''}
+                    <div class="search-result-content">
+                      <div class="search-result-title">\${item.title || 'Result'}</div>
+                      \${item.description ? \`<div class="search-result-desc">\${item.description}</div>\` : ''}
+                    </div>
+                  </a>
+                \`).join('');
+              } catch (error) {
+                console.error('Search error:', error);
+                dropdown.innerHTML = '<div class="search-empty">Error loading results</div>';
+              }
+            }, 300);
+          };
+          
+          // Close dropdown when clicking outside
+          document.addEventListener('click', (e) => {
+            if (!e.target.closest('.searchable-site-element')) {
+              document.querySelectorAll('.search-dropdown-results').forEach(el => {
+                el.style.display = 'none';
+              });
+            }
           });
         </script>
       </body>
@@ -1805,6 +2189,13 @@ function Builder() {
         width: 150,
         height: 40,
         styles: { color: '#6366f1', textDecoration: 'underline', fontSize: '16' }
+      },
+      site_search: {
+        type: 'site_search',
+        content: { placeholder: 'Search this site...' },
+        width: 300,
+        height: 45,
+        styles: { padding: '10', borderRadius: '8', backgroundColor: 'rgba(0,0,0,0.05)', color: '#ffffff', borderStyle: 'solid', borderWidth: '1px', borderColor: 'rgba(255,255,255,0.2)' }
       }
     };
 
@@ -1871,7 +2262,7 @@ function Builder() {
     setSite(updatedSite);
     setIsSaving(true);
     try {
-      await fetch(`/api/sites/${siteId}/`, {
+      await apiFetch(`http://127.0.0.1:8000/api/sites/${siteId}/`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2164,6 +2555,8 @@ function Builder() {
 
   const renderCanvasElement = (el) => {
     const isSelected = selectedElementIds.includes(el.id);
+    // Search dimming — canvas-level filter, no individual element code touched
+    const isSearchDimmed = isSearchActive && !matchedElementIds.has(el.id);
     
     const styles = renderInlineStyles(el.styles);
     if (['heading', 'text', 'button'].includes(el.type)) {
@@ -2242,6 +2635,13 @@ function Builder() {
     };
 
     const wrapWithRnd = (elementInnerContent, inlineStyles = {}) => {
+      // Merge search-dim opacity at the canvas level (no individual element touched)
+      const searchDimStyle = isSearchDimmed
+        ? { opacity: 0.2, filter: 'grayscale(60%)', transition: 'opacity 0.2s, filter 0.2s', pointerEvents: 'none' }
+        : isSearchActive
+          ? { transition: 'opacity 0.2s, filter 0.2s' }
+          : {};
+      inlineStyles = { ...inlineStyles, ...searchDimStyle };
       const handleStyle = isSelected && !isPreview ? { width: '10px', height: '10px', background: '#fff', border: '1px solid #6366f1', borderRadius: '2px', zIndex: 100 } : { display: 'none' };
       return (
         <Rnd
@@ -2287,8 +2687,20 @@ function Builder() {
           onDrag={(e, d) => {
             const startPos = dragStartPositions.current[el.id];
             if (!startPos) return;
-            const deltaX = d.x - startPos.x;
-            const deltaY = d.y - startPos.y;
+            
+            let finalDeltaX = d.x - startPos.x;
+            let finalDeltaY = d.y - startPos.y;
+
+            if (selectedElementIds.length <= 1 && !e.altKey) {
+              const snapResult = calculateSmartAlignment(el.id, startPos.x + finalDeltaX, startPos.y + finalDeltaY, el.width || 100, el.height || 50);
+              if (snapResult.guides.length > 0) {
+                finalDeltaX = snapResult.x - startPos.x;
+                finalDeltaY = snapResult.y - startPos.y;
+              }
+              setAlignmentGuides(snapResult.guides);
+            } else {
+              setAlignmentGuides([]);
+            }
 
             setActiveLayout(prevLayout => prevLayout.map(sec => ({
               ...sec,
@@ -2297,8 +2709,8 @@ function Builder() {
                 if (elStart) {
                   return {
                     ...element,
-                    x: elStart.x + deltaX,
-                    y: elStart.y + deltaY
+                    x: elStart.x + finalDeltaX,
+                    y: elStart.y + finalDeltaY
                   };
                 }
                 return element;
@@ -2306,10 +2718,19 @@ function Builder() {
             })));
           }}
           onDragStop={(e, d) => {
+            setAlignmentGuides([]);
             const startPos = dragStartPositions.current[el.id];
             if (!startPos) return;
             let deltaX = d.x - startPos.x;
             let deltaY = d.y - startPos.y;
+
+            if (selectedElementIds.length <= 1 && !e.altKey) {
+              const snapResult = calculateSmartAlignment(el.id, startPos.x + deltaX, startPos.y + deltaY, el.width || 100, el.height || 50);
+              if (snapResult.guides.length > 0) {
+                deltaX = snapResult.x - startPos.x;
+                deltaY = snapResult.y - startPos.y;
+              }
+            }
 
             if (snapToGrid > 0) {
               deltaX = Math.round(deltaX / snapToGrid) * snapToGrid;
@@ -2569,6 +2990,30 @@ function Builder() {
       );
     }
 
+    if (el.type === 'site_search') {
+      return wrapWithRnd(
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', height: '100%', position: 'relative', ...styles }}>
+          <Search size={16} style={{ position: 'absolute', left: '10px', color: 'inherit', opacity: 0.7 }} />
+          <input 
+            type="text" 
+            placeholder={el.content?.placeholder || 'Search this site...'} 
+            disabled={!isPreview}
+            style={{ 
+              padding: '10px 12px 10px 35px', 
+              width: '100%',
+              height: '100%',
+              borderRadius: 'inherit', 
+              border: 'none', 
+              background: 'transparent', 
+              color: 'inherit',
+              fontSize: '14px',
+              outline: 'none'
+            }} 
+          />
+        </div>
+      );
+    }
+
     if (el.type === 'input') {
       return wrapWithRnd(
         <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', width: '100%', ...styles }}>
@@ -2595,14 +3040,69 @@ function Builder() {
 
     if (el.type === 'shape') {
       const shapeType = el.content?.shapeType || 'rectangle';
-      let shapeStyle = {};
-      if (shapeType === 'circle') {
-        shapeStyle.borderRadius = '50%';
-      } else if (shapeType === 'triangle') {
-        shapeStyle.clipPath = 'polygon(50% 0%, 0% 100%, 100% 100%)';
+      const fillType = el.content?.fillType || 'filled';
+      const strokeWidth = el.content?.borderWidth || 4;
+      
+      const bgColor = styles.backgroundColor || '#6366f1';
+      const isBorder = fillType === 'border';
+      const fill = isBorder ? 'transparent' : bgColor;
+      const stroke = isBorder ? bgColor : 'none';
+      
+      const svgProps = {
+        width: '100%', height: '100%',
+        viewBox: '0 0 100 100',
+        preserveAspectRatio: 'none',
+        style: { overflow: 'visible', filter: styles.boxShadow ? `drop-shadow(${styles.boxShadow})` : 'none' }
+      };
+
+      const pathProps = {
+        fill,
+        stroke,
+        strokeWidth: isBorder ? strokeWidth : 0,
+        vectorEffect: 'non-scaling-stroke'
+      };
+
+      let shapeElement;
+      switch (shapeType) {
+        case 'circle':
+          shapeElement = <ellipse cx="50" cy="50" rx="50" ry="50" {...pathProps} />;
+          break;
+        case 'triangle':
+          shapeElement = <polygon points="50,0 100,100 0,100" {...pathProps} />;
+          break;
+        case 'pentagon':
+          shapeElement = <polygon points="50,0 100,38 82,100 18,100 0,38" {...pathProps} />;
+          break;
+        case 'hexagon':
+          shapeElement = <polygon points="25,0 75,0 100,50 75,100 25,100 0,50" {...pathProps} />;
+          break;
+        case 'octagon':
+          shapeElement = <polygon points="30,0 70,0 100,30 100,70 70,100 30,100 0,70 0,30" {...pathProps} />;
+          break;
+        case 'star':
+          shapeElement = <polygon points="50,0 61,35 98,35 68,57 79,91 50,70 21,91 32,57 2,35 39,35" {...pathProps} />;
+          break;
+        case 'diamond':
+          shapeElement = <polygon points="50,0 100,50 50,100 0,50" {...pathProps} />;
+          break;
+        case 'rectangle':
+        default:
+          shapeElement = <rect x="0" y="0" width="100" height="100" {...pathProps} />;
+          break;
       }
+
+      // Remove properties from styles that are handled by SVG
+      const cleanStyles = { ...styles };
+      delete cleanStyles.backgroundColor;
+      delete cleanStyles.boxShadow;
+      delete cleanStyles.borderRadius;
+
       return wrapWithRnd(
-        <div style={{ width: '100%', height: '100%', ...shapeStyle, ...styles }} />
+        <div style={{ width: '100%', height: '100%', ...cleanStyles }}>
+          <svg {...svgProps}>
+            {shapeElement}
+          </svg>
+        </div>
       );
     }
 
@@ -2971,6 +3471,32 @@ function Builder() {
               {activeLeftTab === 'elements' && (
                 <div>
                   <h3 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '4px' }}>Add Elements</h3>
+
+                  {/* When Layers tab search is active, show a shortcut to switch there */}
+                  {isSearchActive && (
+                    <div style={{
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      background: 'rgba(99,102,241,0.1)',
+                      border: '1px solid rgba(99,102,241,0.3)',
+                      fontSize: '11px',
+                      color: '#818cf8',
+                      marginBottom: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}>
+                      <Search size={12} />
+                      Searching: <strong>"{searchQuery}"</strong> — {matchedElementIds?.size ?? 0} match{matchedElementIds?.size !== 1 ? 'es' : ''} on canvas
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#818cf8', cursor: 'pointer', fontSize: '10px', padding: 0 }}
+                      >
+                        Clear ✕
+                      </button>
+                    </div>
+                  )}
+
                   <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>💡 Drag and drop blocks directly into any section, or click to auto-add.</p>
                   
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '25px', marginTop: '10px' }}>
@@ -3073,6 +3599,15 @@ function Builder() {
                     >
                       <Link2 size={18} /> Link
                     </button>
+                    <button 
+                      draggable 
+                      onDragStart={(e) => e.dataTransfer.setData("elementType", "site_search")}
+                      onClick={() => handleAddElement('site_search')} 
+                      className="btn-secondary" 
+                      style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab', gridColumn: 'span 2' }}
+                    >
+                      <Search size={18} style={{ color: 'var(--primary)' }} /> Site Search Bar
+                    </button>
                   </div>
 
                   {/* Smart Components Section */}
@@ -3104,6 +3639,112 @@ function Builder() {
                   </button>
                   
                  
+                </div>
+              )}
+
+
+              {activeLeftTab === 'layers' && (
+                <div>
+                  <h3 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '4px' }}>Layers</h3>
+                  <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                    All elements on this page. Click to select.
+                  </p>
+
+                  {/* THE SEARCH INPUT — only updates searchQuery, zero filter logic */}
+                  <SearchInput
+                    value={searchQuery}
+                    onQueryChange={setSearchQuery}
+                    placeholder="Search by type, text, alt…"
+                  />
+
+                  {/* Search result count badge */}
+                  {isSearchActive && (
+                    <div style={{
+                      fontSize: '11px',
+                      color: matchedElementIds.size > 0 ? '#818cf8' : '#f87171',
+                      marginBottom: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}>
+                      <Search size={11} />
+                      {matchedElementIds.size === 0
+                        ? 'No elements match'
+                        : `${matchedElementIds.size} element${matchedElementIds.size !== 1 ? 's' : ''} found`}
+                    </div>
+                  )}
+
+                  {/* Element list — auto-populates as elements are added to canvas */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {activeLayout.flatMap((sec, si) =>
+                      (sec.elements || []).map((el, ei) => {
+                        const isMatch = !isSearchActive || matchedElementIds.has(el.id);
+                        const isSelected = selectedElementIds.includes(el.id);
+                        const label = el.content?.text || el.content?.label || el.content?.alt || el.type;
+                        return (
+                          <button
+                            key={el.id}
+                            onClick={() => {
+                              setSelectedElementIds([el.id]);
+                              // Auto-switch to inspect tab
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '6px 10px',
+                              borderRadius: '6px',
+                              border: isSelected
+                                ? '1px solid rgba(99,102,241,0.6)'
+                                : '1px solid transparent',
+                              background: isSelected
+                                ? 'rgba(99,102,241,0.12)'
+                                : 'rgba(255,255,255,0.03)',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              color: isMatch ? '#e2e8f0' : '#374151',
+                              opacity: isMatch ? 1 : 0.35,
+                              transition: 'all 0.15s',
+                              fontSize: '12px',
+                            }}
+                          >
+                            {/* Type badge */}
+                            <span style={{
+                              fontSize: '9px',
+                              fontWeight: '700',
+                              padding: '2px 5px',
+                              borderRadius: '4px',
+                              background: isMatch ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.05)',
+                              color: isMatch ? '#818cf8' : '#64748b',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.4px',
+                              flexShrink: 0,
+                            }}>
+                              {el.type}
+                            </span>
+                            {/* Label (truncated) */}
+                            <span style={{
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              flexGrow: 1,
+                            }}>
+                              {String(label || '').slice(0, 40) || '—'}
+                            </span>
+                            {/* Section indicator */}
+                            <span style={{ fontSize: '10px', color: '#475569', flexShrink: 0 }}>
+                              §{si + 1}
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                    {activeLayout.every(s => (s.elements || []).length === 0) && (
+                      <p style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', padding: '20px 0' }}>
+                        No elements on canvas yet.
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -3569,6 +4210,104 @@ function Builder() {
                             }}
                           >
                             {(sec.elements || []).map(el => renderCanvasElement(el))}
+                            
+                            {!isPreview && alignmentGuides.map((guide, idx) => {
+                              if (guide.type === 'vertical') {
+                                return (
+                                  <div
+                                    key={`guide-${idx}`}
+                                    style={{
+                                      position: 'absolute',
+                                      left: guide.position,
+                                      top: guide.startY,
+                                      height: guide.endY - guide.startY,
+                                      width: '1px',
+                                      borderLeft: `1px dashed ${GUIDE_COLOR}`,
+                                      zIndex: 1000,
+                                      pointerEvents: 'none'
+                                    }}
+                                  />
+                                );
+                              } else if (guide.type === 'horizontal') {
+                                return (
+                                  <div
+                                    key={`guide-${idx}`}
+                                    style={{
+                                      position: 'absolute',
+                                      top: guide.position,
+                                      left: guide.startX,
+                                      width: guide.endX - guide.startX,
+                                      height: '1px',
+                                      borderTop: `1px dashed ${GUIDE_COLOR}`,
+                                      zIndex: 1000,
+                                      pointerEvents: 'none'
+                                    }}
+                                  />
+                                );
+                              } else if (guide.type === 'spacing' && guide.orientation === 'horizontal') {
+                                // Equal-spacing indicator: horizontal bracket + label
+                                const spanW = guide.x2 - guide.x1;
+                                if (spanW < 4) return null;
+                                const SPACING_COLOR = guide.unequal ? '#f59e0b' : '#ec4899'; // amber if unequal, pink if equal
+                                return (
+                                  <div key={`guide-${idx}`} style={{ position: 'absolute', left: guide.x1, top: guide.y, width: spanW, height: 16, pointerEvents: 'none', zIndex: 1001 }}>
+                                    {/* Left cap */}
+                                    <div style={{ position: 'absolute', left: 0, top: 4, width: 1, height: 8, background: SPACING_COLOR }} />
+                                    {/* Right cap */}
+                                    <div style={{ position: 'absolute', right: 0, top: 4, width: 1, height: 8, background: SPACING_COLOR }} />
+                                    {/* Line */}
+                                    <div style={{ position: 'absolute', left: 1, right: 1, top: 7, height: 1, background: SPACING_COLOR }} />
+                                    {/* Label */}
+                                    <div style={{
+                                      position: 'absolute',
+                                      left: '50%', top: -1,
+                                      transform: 'translateX(-50%)',
+                                      background: SPACING_COLOR,
+                                      color: '#fff',
+                                      fontSize: '9px',
+                                      fontWeight: '700',
+                                      padding: '1px 4px',
+                                      borderRadius: '3px',
+                                      whiteSpace: 'nowrap',
+                                      letterSpacing: '0.3px',
+                                    }}>{guide.label}</div>
+                                  </div>
+                                );
+                              } else if (guide.type === 'spacing' && guide.orientation === 'vertical') {
+                                // Vertical bracket + label
+                                const spanH = guide.y2 - guide.y1;
+                                if (spanH < 4) return null;
+                                const SPACING_COLOR = guide.unequal ? '#f59e0b' : '#ec4899';
+                                return (
+                                  <div key={`guide-${idx}`} style={{ position: 'absolute', top: guide.y1, left: guide.x, width: 16, height: spanH, pointerEvents: 'none', zIndex: 1001 }}>
+                                    {/* Top cap */}
+                                    <div style={{ position: 'absolute', top: 0, left: 4, height: 1, width: 8, background: SPACING_COLOR }} />
+                                    {/* Bottom cap */}
+                                    <div style={{ position: 'absolute', bottom: 0, left: 4, height: 1, width: 8, background: SPACING_COLOR }} />
+                                    {/* Line */}
+                                    <div style={{ position: 'absolute', top: 1, bottom: 1, left: 7, width: 1, background: SPACING_COLOR }} />
+                                    {/* Label */}
+                                    <div style={{
+                                      position: 'absolute',
+                                      top: '50%', left: -2,
+                                      transform: 'translateY(-50%)',
+                                      background: SPACING_COLOR,
+                                      color: '#fff',
+                                      fontSize: '9px',
+                                      fontWeight: '700',
+                                      padding: '1px 4px',
+                                      borderRadius: '3px',
+                                      whiteSpace: 'nowrap',
+                                      letterSpacing: '0.3px',
+                                      writingMode: 'vertical-rl',
+                                    }}>{guide.label}</div>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })}
+
+
                             {(sec.elements || []).length === 0 && (
                               <div style={{
                                 padding: '40px 15px',
@@ -3726,6 +4465,31 @@ function Builder() {
                     </div>
                   )}
 
+                  {selectedElement.type === 'site_search' && (
+                    <>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label>Placeholder Text</label>
+                        <input
+                          type="text"
+                          value={selectedElement.content?.placeholder || ''}
+                          onChange={(e) => updateSelectedElement({ content: { placeholder: e.target.value } })}
+                        />
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label>Database Search API Endpoint</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. https://api.mysite.com/search?q="
+                          value={selectedElement.content?.apiEndpoint || ''}
+                          onChange={(e) => updateSelectedElement({ content: { apiEndpoint: e.target.value } })}
+                        />
+                        <p style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                          When visitors type, a GET request will be sent to this URL with their query appended. The API should return a JSON array of results: <code>[{'{title, description, url}'}]</code>
+                        </p>
+                      </div>
+                    </>
+                  )}
+
                   {selectedElement.type === 'input' && (
                     <>
                       <div style={{ marginBottom: '12px' }}>
@@ -3780,17 +4544,46 @@ function Builder() {
                   )}
 
                   {selectedElement.type === 'shape' && (
-                    <div style={{ marginBottom: '12px' }}>
-                      <label>Shape Type</label>
-                      <select
-                        value={selectedElement.content?.shapeType || 'rectangle'}
-                        onChange={(e) => updateSelectedElement({ content: { shapeType: e.target.value } })}
-                      >
-                        <option value="rectangle">Rectangle</option>
-                        <option value="circle">Circle</option>
-                        <option value="triangle">Triangle</option>
-                      </select>
-                    </div>
+                    <>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label>Shape Type</label>
+                        <select
+                          value={selectedElement.content?.shapeType || 'rectangle'}
+                          onChange={(e) => updateSelectedElement({ content: { shapeType: e.target.value } })}
+                        >
+                          <option value="rectangle">Rectangle</option>
+                          <option value="circle">Circle</option>
+                          <option value="triangle">Triangle</option>
+                          <option value="pentagon">Pentagon</option>
+                          <option value="hexagon">Hexagon</option>
+                          <option value="octagon">Octagon</option>
+                          <option value="star">Star</option>
+                          <option value="diamond">Diamond</option>
+                        </select>
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label>Fill Type</label>
+                        <select
+                          value={selectedElement.content?.fillType || 'filled'}
+                          onChange={(e) => updateSelectedElement({ content: { fillType: e.target.value } })}
+                        >
+                          <option value="filled">Filled</option>
+                          <option value="border">Border Only</option>
+                        </select>
+                      </div>
+                      {(selectedElement.content?.fillType === 'border') && (
+                        <div style={{ marginBottom: '12px' }}>
+                          <label>Border Width</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="50"
+                            value={selectedElement.content?.borderWidth || 4}
+                            onChange={(e) => updateSelectedElement({ content: { borderWidth: parseInt(e.target.value) || 4 } })}
+                          />
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {selectedElement.type === 'link' && (
@@ -4196,6 +4989,239 @@ function Builder() {
                     </div>
                   )}
                 </div>
+
+
+                {/* ── ADVANCED STYLING ──────────────────────────────── */}
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: '15px', marginTop: '15px' }}>
+                  <h4 style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--text-secondary)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Advanced Styling</h4>
+
+                  {/* Opacity */}
+                  <div style={{ marginBottom: '14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                      <label>Opacity</label>
+                      <span style={{ fontSize: '12px', color: 'var(--primary)' }}>{Math.round((parseFloat(selectedElement.styles?.opacity ?? 1)) * 100)}%</span>
+                    </div>
+                    <input type="range" min="0" max="1" step="0.01"
+                      value={selectedElement.styles?.opacity ?? 1}
+                      onChange={(e) => updateSelectedElement({ styles: { opacity: e.target.value } })}
+                      style={{ padding: 0 }}
+                    />
+                  </div>
+
+                  {/* Per-side Padding */}
+                  <div style={{ marginBottom: '14px' }}>
+                    <label style={{ display: 'block', marginBottom: '6px' }}>Padding (px)</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                      {[['paddingTop','Top'],['paddingRight','Right'],['paddingBottom','Bottom'],['paddingLeft','Left']].map(([prop, lbl]) => (
+                        <div key={prop}>
+                          <label style={{ fontSize: '10px', color: '#64748b' }}>{lbl}</label>
+                          <input type="number" min="0" max="200"
+                            value={String(selectedElement.styles?.[prop] || '0').replace('px','')}
+                            onChange={(e) => updateSelectedElement({ styles: { [prop]: e.target.value + 'px' } })}
+                            style={{ fontSize: '11px' }} placeholder="0"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Per-side Margin */}
+                  <div style={{ marginBottom: '14px' }}>
+                    <label style={{ display: 'block', marginBottom: '6px' }}>Margin (px)</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                      {[['marginTop','Top'],['marginRight','Right'],['marginBottom','Bottom'],['marginLeft','Left']].map(([prop, lbl]) => (
+                        <div key={prop}>
+                          <label style={{ fontSize: '10px', color: '#64748b' }}>{lbl}</label>
+                          <input type="number" min="-200" max="200"
+                            value={String(selectedElement.styles?.[prop] || '0').replace('px','')}
+                            onChange={(e) => updateSelectedElement({ styles: { [prop]: e.target.value + 'px' } })}
+                            style={{ fontSize: '11px' }} placeholder="0"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Text Shadow */}
+                  {['heading','text','button','link'].includes(selectedElement.type) && (
+                    <div style={{ marginBottom: '14px' }}>
+                      <label style={{ display: 'block', marginBottom: '6px' }}>Text Shadow</label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '5px', marginBottom: '6px' }}>
+                        {[['X','0'],['Y','1'],['Blur','2']].map(([axis, idx]) => (
+                          <div key={axis}>
+                            <label style={{ fontSize: '10px', color: '#64748b' }}>{axis} (px)</label>
+                            <input type="number" min="-30" max="30"
+                              value={parseInt((selectedElement.styles?.textShadow || '0px 0px 0px #000').split(' ')[idx]) || 0}
+                              onChange={(e) => {
+                                const parts = (selectedElement.styles?.textShadow || '0px 0px 0px #000000').split(' ');
+                                while (parts.length < 4) parts.push(parts.length === 3 ? '#000000' : '0px');
+                                parts[idx] = e.target.value + 'px';
+                                updateSelectedElement({ styles: { textShadow: parts.join(' ') } });
+                              }}
+                              style={{ fontSize: '11px' }} placeholder="0"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <label style={{ fontSize: '10px', color: '#64748b', flexShrink: 0 }}>Color</label>
+                        <input type="color"
+                          value={(() => { const ts = selectedElement.styles?.textShadow || ''; const m = ts.match(/#[0-9a-fA-F]{3,6}/); return m ? m[0] : '#000000'; })()}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            debouncedColorUpdate('ts_color', () => {
+                              const parts = (selectedElement.styles?.textShadow || '0px 0px 4px #000000').split(' ');
+                              while (parts.length < 4) parts.push('#000000');
+                              parts[3] = v;
+                              updateSelectedElement({ styles: { textShadow: parts.join(' ') } });
+                            });
+                          }}
+                          style={{ height: '28px', padding: 0, border: 'none', cursor: 'pointer', width: '40px' }}
+                        />
+                        <button onClick={() => updateSelectedElement({ styles: { textShadow: 'none' } })}
+                          style={{ fontSize: '10px', padding: '3px 8px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#64748b', cursor: 'pointer' }}>
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Gradient Background */}
+                  <div style={{ marginBottom: '14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label>Gradient Background</label>
+                      <button onClick={() => updateSelectedElement({ styles: { backgroundImage: 'none' } })}
+                        style={{ fontSize: '10px', padding: '2px 6px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#64748b', cursor: 'pointer' }}>
+                        Clear
+                      </button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '6px' }}>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#64748b' }}>From</label>
+                        <input type="color"
+                          value={(() => { const bg = selectedElement.styles?.backgroundImage || ''; const m = bg.match(/#[0-9a-fA-F]{6}/g); return m ? m[0] : '#6366f1'; })()}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            debouncedColorUpdate('grad_from', () => {
+                              const curr = selectedElement.styles?.backgroundImage || '';
+                              const m = curr.match(/#[0-9a-fA-F]{6}/g);
+                              const to = m && m[1] ? m[1] : '#ec4899';
+                              const dir = (curr.match(/to [\w ]+(?=,)/) || ['to right'])[0];
+                              updateSelectedElement({ styles: { backgroundImage: `linear-gradient(${dir}, ${v}, ${to})` } });
+                            });
+                          }}
+                          style={{ height: '32px', padding: 0, border: 'none', cursor: 'pointer', width: '100%' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#64748b' }}>To</label>
+                        <input type="color"
+                          value={(() => { const bg = selectedElement.styles?.backgroundImage || ''; const m = bg.match(/#[0-9a-fA-F]{6}/g); return m && m[1] ? m[1] : '#ec4899'; })()}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            debouncedColorUpdate('grad_to', () => {
+                              const curr = selectedElement.styles?.backgroundImage || '';
+                              const m = curr.match(/#[0-9a-fA-F]{6}/g);
+                              const from = m ? m[0] : '#6366f1';
+                              const dir = (curr.match(/to [\w ]+(?=,)/) || ['to right'])[0];
+                              updateSelectedElement({ styles: { backgroundImage: `linear-gradient(${dir}, ${from}, ${v})` } });
+                            });
+                          }}
+                          style={{ height: '32px', padding: 0, border: 'none', cursor: 'pointer', width: '100%' }}
+                        />
+                      </div>
+                    </div>
+                    <select
+                      value={(() => { const bg = selectedElement.styles?.backgroundImage || ''; const m = bg.match(/to [\w ]+(?=,)/); return m ? m[0] : 'to right'; })()}
+                      onChange={(e) => {
+                        const curr = selectedElement.styles?.backgroundImage || '';
+                        const m = curr.match(/#[0-9a-fA-F]{6}/g);
+                        const from = m ? m[0] : '#6366f1';
+                        const to = m && m[1] ? m[1] : '#ec4899';
+                        updateSelectedElement({ styles: { backgroundImage: `linear-gradient(${e.target.value}, ${from}, ${to})` } });
+                      }}
+                      style={{ fontSize: '11px', width: '100%' }}
+                    >
+                      <option value="to right">→ Left to Right</option>
+                      <option value="to left">← Right to Left</option>
+                      <option value="to bottom">↓ Top to Bottom</option>
+                      <option value="to top">↑ Bottom to Top</option>
+                      <option value="to bottom right">↘ Diagonal</option>
+                      <option value="to bottom left">↙ Diagonal</option>
+                    </select>
+                  </div>
+
+                  {/* Background Image URL */}
+                  <div style={{ marginBottom: '14px' }}>
+                    <label style={{ display: 'block', marginBottom: '5px' }}>Background Image URL</label>
+                    <input type="text"
+                      value={(() => { const v = selectedElement.styles?.backgroundImage || ''; const m = v.match(/url\(['"]?([^'")\s]+)['"]?\)/); return m ? m[1] : ''; })()}
+                      onChange={(e) => {
+                        const url = e.target.value.trim();
+                        updateSelectedElement({ styles: { backgroundImage: url ? `url('${url}')` : 'none', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' } });
+                      }}
+                      placeholder="https://…/image.jpg"
+                      style={{ fontSize: '11px' }}
+                    />
+                  </div>
+
+                  {/* Transform */}
+                  <div style={{ marginBottom: '14px' }}>
+                    <label style={{ display: 'block', marginBottom: '6px' }}>Transform</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#64748b' }}>Rotate (°)</label>
+                        <input type="number" min="-360" max="360"
+                          value={(() => { const t = selectedElement.styles?.transform || ''; const m = t.match(/rotate\((-?\d+)/); return m ? m[1] : 0; })()}
+                          onChange={(e) => {
+                            const rot = e.target.value;
+                            const curr = (selectedElement.styles?.transform || '').replace(/rotate\([^)]+\)\s*/g, '').trim();
+                            updateSelectedElement({ styles: { transform: `${curr} rotate(${rot}deg)`.trim() } });
+                          }}
+                          style={{ fontSize: '11px' }} placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', color: '#64748b' }}>Scale</label>
+                        <input type="number" min="0.1" max="5" step="0.05"
+                          value={(() => { const t = selectedElement.styles?.transform || ''; const m = t.match(/scale\(([\d.]+)/); return m ? m[1] : 1; })()}
+                          onChange={(e) => {
+                            const sc = e.target.value;
+                            const curr = (selectedElement.styles?.transform || '').replace(/scale\([^)]+\)\s*/g, '').trim();
+                            updateSelectedElement({ styles: { transform: `${curr} scale(${sc})`.trim() } });
+                          }}
+                          style={{ fontSize: '11px' }} placeholder="1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Mix Blend Mode */}
+                  <div style={{ marginBottom: '14px' }}>
+                    <label style={{ display: 'block', marginBottom: '5px' }}>Mix Blend Mode</label>
+                    <select value={selectedElement.styles?.mixBlendMode || 'normal'}
+                      onChange={(e) => updateSelectedElement({ styles: { mixBlendMode: e.target.value } })}
+                      style={{ fontSize: '11px' }}>
+                      {['normal','multiply','screen','overlay','darken','lighten','color-dodge','color-burn','hard-light','soft-light','difference','exclusion'].map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Cursor */}
+                  <div style={{ marginBottom: '6px' }}>
+                    <label style={{ display: 'block', marginBottom: '5px' }}>Cursor Style</label>
+                    <select value={selectedElement.styles?.cursor || 'default'}
+                      onChange={(e) => updateSelectedElement({ styles: { cursor: e.target.value } })}
+                      style={{ fontSize: '11px' }}>
+                      {['default','pointer','text','move','grab','not-allowed','crosshair','zoom-in','help','wait'].map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {/* ── END ADVANCED STYLING ──────────────────────────── */}
+
 
                 <div style={{ borderTop: '1px solid var(--border)', paddingTop: '15px', marginTop: '15px' }}>
                   <h4 style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Hover Styling</h4>
