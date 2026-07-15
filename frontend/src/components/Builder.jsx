@@ -164,9 +164,9 @@ function Builder() {
   const [pages, setPages] = useState([]);
   const [activePage, setActivePage] = useState(null);
   const [activeLayout, setActiveLayout] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // ── SEARCH STATE (brain) ──────────────────────────────────────────────────
-  const [searchQuery, setSearchQuery] = useState('');
   // Derived: Set of matched element IDs (null = no filter)
   // Recomputes only when activeLayout or searchQuery changes — never in render.
   const matchedElementIds = useMemo(
@@ -174,8 +174,44 @@ function Builder() {
     [activeLayout, searchQuery]
   );
   const isSearchActive = matchedElementIds !== null;
-  // ─────────────────────────────────────────────────────────────────────────
-
+  // 
+  
+  const [liveSearchQuery, setLiveSearchQuery] = useState('');
+  const liveMatchedElementIds = useMemo(
+    () => filterElements(activeLayout, liveSearchQuery),
+    [activeLayout, liveSearchQuery]
+  );
+  const isLiveSearchActive = liveMatchedElementIds !== null;
+  // 
+  
+  const [language, setLanguage] = useState('en');
+  const DICT = {
+    en: {
+      builder: 'Builder',
+      save: 'Save',
+      publish: 'Publish',
+      pages: 'Pages',
+      settings: 'Settings',
+      layers: 'Layers',
+      preview: 'Preview',
+      exitPreview: 'Exit Preview',
+      components: 'Components',
+      properties: 'Properties'
+    },
+    ar: {
+      builder: 'المُنشئ',
+      save: 'حفظ',
+      publish: 'نشر',
+      pages: 'الصفحات',
+      settings: 'الإعدادات',
+      layers: 'الطبقات',
+      preview: 'معاينة',
+      exitPreview: 'الخروج من المعاينة',
+      components: 'المكونات',
+      properties: 'الخصائص'
+    }
+  };
+  const t = (key) => DICT[language]?.[key] || key;
 
   // Debounce ref for color inputs — prevents Edge/Chrome from re-rendering on every mouse-drag pixel
   const colorDebounceRef = useRef({});
@@ -808,8 +844,8 @@ function Builder() {
       const elRight = elLeft + elRect.width;
       const elBottom = elTop + elRect.height;
 
-      const overlap = !(x2 < elLeft || x1 > elRight || y2 < elTop || y1 > elBottom);
-      if (overlap) {
+      const strictlyContained = (elLeft >= x1 && elRight <= x2 && elTop >= y1 && elBottom <= y2);
+      if (strictlyContained) {
         overlappedIds.push(elId);
       }
     });
@@ -1083,50 +1119,11 @@ function Builder() {
 
       .modal-close:hover { opacity: 1; }
 
-      .search-dropdown-results {
-        position: absolute;
-        top: calc(100% + 5px);
-        left: 0;
-        width: 100%;
-        max-height: 400px;
-        overflow-y: auto;
-        background: #ffffff;
-        border-radius: 8px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-        z-index: 10000;
-        border: 1px solid #e5e7eb;
-        display: none;
-      }
-      .search-result-item {
-        display: flex;
-        padding: 12px;
-        border-bottom: 1px solid #f3f4f6;
-        text-decoration: none;
-        color: #111827;
-        align-items: center;
-        gap: 12px;
-        transition: background 0.2s;
-      }
-      .search-result-item:hover { background: #f9fafb; }
-      .search-result-item:last-child { border-bottom: none; }
-      .search-result-item img {
-        width: 40px;
-        height: 40px;
-        object-fit: cover;
-        border-radius: 6px;
-        flex-shrink: 0;
-      }
-      .search-result-content { flex: 1; overflow: hidden; }
-      .search-result-title {
-        font-weight: 600; font-size: 14px; margin-bottom: 2px;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      }
-      .search-result-desc {
-        font-size: 12px; color: #6b7280;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      }
-      .search-loading, .search-empty {
-        padding: 15px; text-align: center; color: #6b7280; font-size: 13px;
+      .search-dimmed {
+        opacity: 0.1 !important;
+        pointer-events: none !important;
+        filter: grayscale(100%) !important;
+        transition: opacity 0.3s, filter 0.3s;
       }
 
       ${animationKeyframes}
@@ -1301,9 +1298,8 @@ function Builder() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 10px; opacity: 0.7;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
               <input 
                 type="text" 
-                data-api-endpoint="${el.content?.apiEndpoint || ''}"
                 placeholder="${el.content?.placeholder || 'Search this site...'}" 
-                oninput="window.runSiteSearch(this)"
+                oninput="window.runSiteSearch(this.value)"
                 style="padding: 10px 12px 10px 35px; width: 100%; height: 100%; border-radius: inherit; border: none; background: transparent; color: inherit; font-size: 14px; outline: none;" 
               />
             </div>
@@ -1351,7 +1347,7 @@ function Builder() {
 
     return `
       <!DOCTYPE html>
-      <html lang="en">
+      <html lang="${language}" dir="${language === 'ar' ? 'rtl' : 'ltr'}">
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1487,67 +1483,33 @@ function Builder() {
             document.querySelectorAll('[data-aos-name]').forEach(el => observer.observe(el));
           });
 
-          let searchTimeout = null;
-          window.runSiteSearch = function(inputEl) {
-            const query = inputEl.value.trim();
-            const endpoint = inputEl.getAttribute('data-api-endpoint');
-            const wrapper = inputEl.closest('.element-wrapper');
-            let dropdown = wrapper.querySelector('.search-dropdown-results');
-            
-            if (!dropdown) {
-              dropdown = document.createElement('div');
-              dropdown.className = 'search-dropdown-results';
-              wrapper.style.position = 'relative';
-              wrapper.appendChild(dropdown);
-            }
-
-            if (!query || !endpoint) {
-              dropdown.style.display = 'none';
-              return;
-            }
-
-            if (searchTimeout) clearTimeout(searchTimeout);
-            
-            dropdown.style.display = 'block';
-            dropdown.innerHTML = '<div class="search-loading">Searching...</div>';
-
-            searchTimeout = setTimeout(async () => {
-              try {
-                // Ensure endpoint has query parameter structure
-                const url = endpoint.includes('?') ? \`\${endpoint}\${encodeURIComponent(query)}\` : \`\${endpoint}?q=\${encodeURIComponent(query)}\`;
-                const response = await fetch(url);
-                if (!response.ok) throw new Error('Network response was not ok');
-                const results = await response.json();
-                
-                if (!Array.isArray(results) || results.length === 0) {
-                  dropdown.innerHTML = '<div class="search-empty">No results found</div>';
-                  return;
-                }
-
-                dropdown.innerHTML = results.map(item => \`
-                  <a href="\${item.url || '#'}" class="search-result-item">
-                    \${item.image ? \`<img src="\${item.image}" alt="\${item.title}">\` : ''}
-                    <div class="search-result-content">
-                      <div class="search-result-title">\${item.title || 'Result'}</div>
-                      \${item.description ? \`<div class="search-result-desc">\${item.description}</div>\` : ''}
-                    </div>
-                  </a>
-                \`).join('');
-              } catch (error) {
-                console.error('Search error:', error);
-                dropdown.innerHTML = '<div class="search-empty">Error loading results</div>';
+          window.runSiteSearch = function(query) {
+            const q = query.toLowerCase().trim();
+            const elements = document.querySelectorAll('.searchable-site-element');
+            elements.forEach(el => {
+              if (el.querySelector('input[oninput*="runSiteSearch"]')) {
+                el.classList.remove('search-dimmed');
+                return;
               }
-            }, 300);
+
+              if (!q) {
+                el.classList.remove('search-dimmed');
+                return;
+              }
+              
+              let isMatch = false;
+              if (el.innerText.toLowerCase().includes(q)) isMatch = true;
+              
+              const img = el.querySelector('img');
+              if (img && img.alt.toLowerCase().includes(q)) isMatch = true;
+
+              const input = el.querySelector('input, textarea');
+              if (input && (input.placeholder.toLowerCase().includes(q) || input.value.toLowerCase().includes(q))) isMatch = true;
+
+              if (isMatch) el.classList.remove('search-dimmed');
+              else el.classList.add('search-dimmed');
+            });
           };
-          
-          // Close dropdown when clicking outside
-          document.addEventListener('click', (e) => {
-            if (!e.target.closest('.searchable-site-element')) {
-              document.querySelectorAll('.search-dropdown-results').forEach(el => {
-                el.style.display = 'none';
-              });
-            }
-          });
         </script>
       </body>
       </html>
@@ -1654,9 +1616,18 @@ function Builder() {
 
   const findElementInLayout = (elementId) => {
     for (let sec of activeLayout) {
-      for (let el of (sec.elements || [])) {
-        if (el.id === elementId) return { section: sec, element: el };
-      }
+      const searchElements = (elements) => {
+        for (let el of elements) {
+          if (el.id === elementId) return { section: sec, element: el };
+          if (el.type === 'group' && el.elements) {
+            const found = searchElements(el.elements);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      const found = searchElements(sec.elements || []);
+      if (found) return found;
     }
     return null;
   };
@@ -1670,23 +1641,77 @@ function Builder() {
   const selectedElement = getSelectedElement();
 
   const updateSelectedElement = (updates) => {
+    let globalIdsToSync = [];
+    let updatedElementData = {};
+
     const nextLayout = activeLayout.map(sec => ({
       ...sec,
       elements: (sec.elements || []).map(el => {
         if (selectedElementIds.includes(el.id)) {
-          return {
+          const updatedEl = {
             ...el,
+            isGlobal: updates.isGlobal !== undefined ? updates.isGlobal : el.isGlobal,
             content: { ...el.content, ...updates.content },
             styles: { ...el.styles, ...updates.styles },
             animation: { ...el.animation, ...updates.animation },
             action: { ...el.action, ...updates.action },
             hoverStyles: { ...el.hoverStyles, ...updates.hoverStyles }
           };
+          if (updatedEl.isGlobal) {
+            globalIdsToSync.push(el.id);
+            updatedElementData[el.id] = updatedEl;
+          }
+          return updatedEl;
         }
         return el;
       })
     }));
+
     updateLayout(nextLayout);
+
+    // Sync global elements across all other pages
+    if (globalIdsToSync.length > 0) {
+      setPages(prevPages => prevPages.map(page => {
+        if (page.id === activePage.id) return page; // already handled
+        let pageChanged = false;
+        
+        const newPageLayout = (page.layout || []).map(sec => ({
+          ...sec,
+          elements: (sec.elements || []).map(el => {
+            if (globalIdsToSync.includes(el.id)) {
+               pageChanged = true;
+               return { ...updatedElementData[el.id] };
+            }
+            return el;
+          })
+        }));
+        
+        // Ensure the global element gets added to the page if it wasn't there
+        globalIdsToSync.forEach(gid => {
+           let found = false;
+           for (const sec of newPageLayout) {
+             if (sec.elements && sec.elements.some(e => e.id === gid)) {
+               found = true;
+               break;
+             }
+           }
+           
+           if (!found) {
+             if (newPageLayout.length === 0) {
+                newPageLayout.push({
+                   id: 'sec-auto-' + Date.now() + '-' + Math.random(),
+                   settings: { backgroundColor: 'transparent', containerWidth: '1200px' },
+                   elements: []
+                });
+             }
+             newPageLayout[0].elements.push({ ...updatedElementData[gid] });
+             pageChanged = true;
+           }
+        });
+
+        return pageChanged ? { ...page, layout: newPageLayout } : page;
+      }));
+    }
   };
 
   const renderLabelWithReset = (label, groupName, keyName) => {
@@ -1976,6 +2001,13 @@ function Builder() {
         width: 150,
         height: 40,
         styles: { color: '#6366f1', textDecoration: 'underline', fontSize: '16' }
+      },
+      site_search: {
+        type: 'site_search',
+        content: { placeholder: 'Search...' },
+        width: 300,
+        height: 45,
+        styles: { padding: '10 15', backgroundColor: '#1e293b', color: '#ffffff', borderRadius: '6', border: '1px solid #334155' }
       }
     };
 
@@ -2204,12 +2236,15 @@ function Builder() {
       if (parseInt(e.styles?.zIndex||10) > maxZ) maxZ = parseInt(e.styles?.zIndex||10);
     }));
 
+    const elWidth = elementType === 'shape' ? 150 : elementType === 'link' ? 150 : defaultElements[elementType]?.width || 250;
+    const elHeight = elementType === 'shape' ? 150 : elementType === 'link' ? 40 : defaultElements[elementType]?.height || 50;
+
     const newEl = {
       id: `el_${Date.now()}`,
-      x: Math.max(0, x - 100),
-      y: Math.max(0, y - 20),
-      width: elementType === 'shape' ? 150 : elementType === 'link' ? 150 : 250,
-      height: elementType === 'shape' ? 150 : elementType === 'link' ? 40 : 50,
+      x: Math.max(0, x - (elWidth / 2)),
+      y: Math.max(0, y - (elHeight / 2)),
+      width: elWidth,
+      height: elHeight,
       ...defaultElements[elementType],
       styles: {
         ...(defaultElements[elementType].styles || {}),
@@ -2553,11 +2588,15 @@ function Builder() {
     return css;
   };
 
-  const renderCanvasElement = (el) => {
+  const renderCanvasElement = (el, disableRnd = false) => {
     const isSelected = selectedElementIds.includes(el.id);
     // Search dimming — canvas-level filter, no individual element code touched
     const isSearchDimmed = isSearchActive && !matchedElementIds.has(el.id);
     
+    // Live frontend search filter
+    const isLiveSearchHidden = isPreview && isLiveSearchActive && !liveMatchedElementIds.has(el.id);
+    if (isLiveSearchHidden) return null;
+
     const styles = renderInlineStyles(el.styles);
     if (['heading', 'text', 'button'].includes(el.type)) {
       styles.whiteSpace = 'pre-wrap';
@@ -2643,6 +2682,26 @@ function Builder() {
           : {};
       inlineStyles = { ...inlineStyles, ...searchDimStyle };
       const handleStyle = isSelected && !isPreview ? { width: '10px', height: '10px', background: '#fff', border: '1px solid #6366f1', borderRadius: '2px', zIndex: 100 } : { display: 'none' };
+      
+      if (disableRnd) {
+        return (
+          <div 
+            key={`${el.id}_${isPreview}`} 
+            style={{ 
+              position: 'absolute', 
+              top: el.y, 
+              left: el.x, 
+              width: el.width || '100%', 
+              height: el.height || 'auto', 
+              zIndex: el.styles?.zIndex || 10,
+              ...inlineStyles
+            }}
+          >
+            {elementInnerContent}
+          </div>
+        );
+      }
+
       return (
         <Rnd
           key={`${el.id}_${isPreview}`}
@@ -2998,6 +3057,10 @@ function Builder() {
             type="text" 
             placeholder={el.content?.placeholder || 'Search this site...'} 
             disabled={!isPreview}
+            value={isPreview ? liveSearchQuery : undefined}
+            onChange={(e) => {
+              if (isPreview) setLiveSearchQuery(e.target.value);
+            }}
             style={{ 
               padding: '10px 12px 10px 35px', 
               width: '100%',
@@ -3392,6 +3455,15 @@ function Builder() {
             title="Download project as ZIP archive"
           >
             <Download size={14} /> Export
+          </button>
+
+          <button 
+            onClick={() => setLanguage(lang => lang === 'en' ? 'ar' : 'en')}
+            className="btn-secondary" 
+            style={{ padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
+            title="Toggle Language"
+          >
+            <Globe size={14} /> {language === 'en' ? 'AR' : 'EN'}
           </button>
 
           <button 
@@ -4407,6 +4479,20 @@ function Builder() {
                     </div>
                   )}
 
+                  <div style={{ marginBottom: '16px', padding: '10px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label style={{ margin: 0, fontWeight: 'bold' }}>Global Sync</label>
+                      <input 
+                        type="checkbox"
+                        checked={!!selectedElement.isGlobal}
+                        onChange={(e) => updateSelectedElement({ isGlobal: e.target.checked })}
+                      />
+                    </div>
+                    <p style={{ fontSize: '10px', color: 'var(--text-secondary)', margin: 0 }}>
+                      If checked, changes to this element will automatically sync to all pages where it exists.
+                    </p>
+                  </div>
+
                   {selectedElement.type === 'heading' && (
                     <div style={{ marginBottom: '12px' }}>
                       <label>Heading Size</label>
@@ -4474,18 +4560,6 @@ function Builder() {
                           value={selectedElement.content?.placeholder || ''}
                           onChange={(e) => updateSelectedElement({ content: { placeholder: e.target.value } })}
                         />
-                      </div>
-                      <div style={{ marginBottom: '12px' }}>
-                        <label>Database Search API Endpoint</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. https://api.mysite.com/search?q="
-                          value={selectedElement.content?.apiEndpoint || ''}
-                          onChange={(e) => updateSelectedElement({ content: { apiEndpoint: e.target.value } })}
-                        />
-                        <p style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                          When visitors type, a GET request will be sent to this URL with their query appended. The API should return a JSON array of results: <code>[{'{title, description, url}'}]</code>
-                        </p>
                       </div>
                     </>
                   )}
