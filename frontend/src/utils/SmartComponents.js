@@ -323,6 +323,281 @@ export const SMART_COMPONENTS = {
         }
       ];
     }
+  },
+
+  mediaSlider: {
+    type: 'smart-component',
+    componentType: 'mediaSlider',
+    label: 'Media Slider',
+    icon: '🎠',
+    description: 'Image carousel/slider with navigation arrows and dots',
+    defaultStyles: {
+      paddingTop: '40',
+      paddingBottom: '40',
+      backgroundColor: '#0f172a'
+    },
+    generateElements: (sectionId) => {
+      const baseId = `el_${Date.now()}`;
+      const slides = [
+        {
+          image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80',
+          heading: 'Slide 1: Analytics Dashboard',
+          text: 'Track your performance with real-time analytics and insights.'
+        },
+        {
+          image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1200&q=80',
+          heading: 'Slide 2: Team Collaboration',
+          text: 'Work together seamlessly with powerful collaboration tools.'
+        },
+        {
+          image: 'https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?auto=format&fit=crop&w=1200&q=80',
+          heading: 'Slide 3: Cloud Storage',
+          text: 'Secure and scalable cloud storage for all your files.'
+        }
+      ];
+
+      // Store slides data in a global registry for the slider JavaScript to access
+      if (typeof window !== 'undefined') {
+        window.sliderData = window.sliderData || {};
+        window.sliderData[baseId] = {
+          slides,
+          currentSlide: 0,
+          autoPlayInterval: 5000
+        };
+      }
+
+      return [
+        // Main slider container (invisible, used for positioning)
+        {
+          id: `${baseId}_container`,
+          type: 'shape',
+          content: { shapeType: 'rectangle', fillType: 'filled' },
+          width: 1000,
+          height: 450,
+          x: 100,
+          y: 30,
+          styles: {
+            backgroundColor: '#1e293b',
+            borderRadius: '12',
+            borderWidth: '0',
+            zIndex: 1
+          }
+        },
+        // Slide 1 Image
+        {
+          id: `${baseId}_slide1_img`,
+          type: 'image',
+          content: { 
+            src: slides[0].image,
+            alt: slides[0].heading
+          },
+          width: 1000,
+          height: 450,
+          x: 100,
+          y: 30,
+          styles: {
+            borderRadius: '12',
+            zIndex: 2
+          }
+        },
+        // Slide 2 Image (hidden initially)
+        {
+          id: `${baseId}_slide2_img`,
+          type: 'image',
+          content: { 
+            src: slides[1].image,
+            alt: slides[1].heading
+          },
+          width: 1000,
+          height: 450,
+          x: 100,
+          y: 30,
+          styles: {
+            borderRadius: '12',
+            zIndex: 2,
+            opacity: '0',
+            transition: 'opacity 0.5s ease-in-out'
+          }
+        },
+        // Slide 3 Image (hidden initially)
+        {
+          id: `${baseId}_slide3_img`,
+          type: 'image',
+          content: { 
+            src: slides[2].image,
+            alt: slides[2].heading
+          },
+          width: 1000,
+          height: 450,
+          x: 100,
+          y: 30,
+          styles: {
+            borderRadius: '12',
+            zIndex: 2,
+            opacity: '0',
+            transition: 'opacity 0.5s ease-in-out'
+          }
+        },
+        // Slide 1 Text Overlay
+        {
+          id: `${baseId}_slide1_text`,
+          type: 'text',
+          content: { text: `${slides[0].heading}\n\n${slides[0].text}` },
+          width: 500,
+          height: 150,
+          x: 150,
+          y: 180,
+          styles: {
+            fontSize: '28',
+            fontWeight: '700',
+            color: '#ffffff',
+            textAlign: 'left',
+            lineHeight: '1.4',
+            zIndex: 3,
+            textShadow: '2px 2px 8px rgba(0,0,0,0.8)',
+            transition: 'opacity 0.5s ease-in-out'
+          }
+        },
+        // Slide 2 Text (hidden initially)
+        {
+          id: `${baseId}_slide2_text`,
+          type: 'text',
+          content: { text: `${slides[1].heading}\n\n${slides[1].text}` },
+          width: 500,
+          height: 150,
+          x: 150,
+          y: 180,
+          styles: {
+            fontSize: '28',
+            fontWeight: '700',
+            color: '#ffffff',
+            textAlign: 'left',
+            lineHeight: '1.4',
+            zIndex: 3,
+            textShadow: '2px 2px 8px rgba(0,0,0,0.8)',
+            opacity: '0',
+            transition: 'opacity 0.5s ease-in-out'
+          }
+        },
+        // Slide 3 Text (hidden initially)
+        {
+          id: `${baseId}_slide3_text`,
+          type: 'text',
+          content: { text: `${slides[2].heading}\n\n${slides[2].text}` },
+          width: 500,
+          height: 150,
+          x: 150,
+          y: 180,
+          styles: {
+            fontSize: '28',
+            fontWeight: '700',
+            color: '#ffffff',
+            textAlign: 'left',
+            lineHeight: '1.4',
+            zIndex: 3,
+            textShadow: '2px 2px 8px rgba(0,0,0,0.8)',
+            opacity: '0',
+            transition: 'opacity 0.5s ease-in-out'
+          }
+        },
+        // Left Arrow
+        {
+          id: `${baseId}_arrow_left`,
+          type: 'button',
+          content: { text: '‹' },
+          width: 50,
+          height: 50,
+          x: 120,
+          y: 230,
+          styles: {
+            backgroundColor: 'rgba(255,255,255,0.2)',
+            color: '#ffffff',
+            borderRadius: '50',
+            fontSize: '32',
+            fontWeight: '300',
+            borderWidth: '2',
+            borderColor: 'rgba(255,255,255,0.4)',
+            borderStyle: 'solid',
+            zIndex: 4,
+            backdropFilter: 'blur(10px)',
+            cursor: 'pointer'
+          },
+          action: { type: 'none' }
+        },
+        // Right Arrow
+        {
+          id: `${baseId}_arrow_right`,
+          type: 'button',
+          content: { text: '›' },
+          width: 50,
+          height: 50,
+          x: 1030,
+          y: 230,
+          styles: {
+            backgroundColor: 'rgba(255,255,255,0.2)',
+            color: '#ffffff',
+            borderRadius: '50',
+            fontSize: '32',
+            fontWeight: '300',
+            borderWidth: '2',
+            borderColor: 'rgba(255,255,255,0.4)',
+            borderStyle: 'solid',
+            zIndex: 4,
+            backdropFilter: 'blur(10px)',
+            cursor: 'pointer'
+          },
+          action: { type: 'none' }
+        },
+        // Dot 1
+        {
+          id: `${baseId}_dot1`,
+          type: 'shape',
+          content: { shapeType: 'circle', fillType: 'filled' },
+          width: 14,
+          height: 14,
+          x: 580,
+          y: 460,
+          styles: {
+            backgroundColor: '#6366f1',
+            borderRadius: '50',
+            zIndex: 5,
+            cursor: 'pointer'
+          }
+        },
+        // Dot 2
+        {
+          id: `${baseId}_dot2`,
+          type: 'shape',
+          content: { shapeType: 'circle', fillType: 'filled' },
+          width: 14,
+          height: 14,
+          x: 610,
+          y: 460,
+          styles: {
+            backgroundColor: 'rgba(255,255,255,0.4)',
+            borderRadius: '50',
+            zIndex: 5,
+            cursor: 'pointer'
+          }
+        },
+        // Dot 3
+        {
+          id: `${baseId}_dot3`,
+          type: 'shape',
+          content: { shapeType: 'circle', fillType: 'filled' },
+          width: 14,
+          height: 14,
+          x: 640,
+          y: 460,
+          styles: {
+            backgroundColor: 'rgba(255,255,255,0.4)',
+            borderRadius: '50',
+            zIndex: 5,
+            cursor: 'pointer'
+          }
+        }
+      ];
+    }
   }
 };
 

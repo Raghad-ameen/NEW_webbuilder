@@ -6,7 +6,8 @@ import {
   Copy, Settings, Palette, FileCode, Layers, CheckCircle, RefreshCw, Sparkles, Mail,
   ClipboardCopy, ClipboardPaste, AlignLeft, AlignCenter, AlignRight,
   AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
-  Move, Group, Ungroup, Download, X, Circle, Triangle, Link2, Search, LayoutList
+  Move, Group, Ungroup, Download, X, Circle, Triangle, Link2, Search, LayoutList,
+  ChevronLeft, ChevronRight, ArrowUp as ArrowUpIcon, ArrowDown as ArrowDownIcon, ArrowLeft as ArrowLeftIcon, ArrowRight as ArrowRightIcon
 } from 'lucide-react';
 import { TEMPLATES } from '../utils/TemplateData';
 import { Rnd } from 'react-rnd';
@@ -225,6 +226,9 @@ function Builder() {
   const setSelectedElementId = (id) => {
     setSelectedElementIds(id ? [id] : []);
   };
+  
+  // Keyboard Navigation Focus State
+  const [focusedElementId, setFocusedElementId] = useState(null);
   
   const [lassoStart, setLassoStart] = useState(null);
   const [lassoEnd, setLassoEnd] = useState(null);
@@ -643,7 +647,91 @@ function Builder() {
       }
       if (e.key === 'Escape') {
         setSelectedElementIds([]);
+        setFocusedElementId(null);
         setInlineEditingId(null);
+      }
+      
+      // Selection Navigation - Arrow keys cycle through elements by proximity
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        const activeEl = document.activeElement;
+        const isInputFocused = activeEl && (
+          activeEl.tagName === 'INPUT' || 
+          activeEl.tagName === 'TEXTAREA' || 
+          activeEl.isContentEditable
+        );
+        
+        if (!isInputFocused && !isPreview) {
+          e.preventDefault();
+          
+          // Get all elements on canvas
+          const allElements = [];
+          activeLayout.forEach(sec => {
+            (sec.elements || []).forEach(el => {
+              allElements.push({
+                id: el.id,
+                x: el.x || 0,
+                y: el.y || 0,
+                width: el.width || 100,
+                height: el.height || 50,
+                centerX: (el.x || 0) + (el.width || 100) / 2,
+                centerY: (el.y || 0) + (el.height || 50) / 2
+              });
+            });
+          });
+          
+          if (allElements.length === 0) return;
+          
+          // Determine current reference element (focused or selected)
+          const currentId = focusedElementId || selectedElementId;
+          const currentEl = currentId ? allElements.find(el => el.id === currentId) : null;
+          
+          // Define direction vector
+          let dirX = 0, dirY = 0;
+          switch(e.key) {
+            case 'ArrowUp': dirY = -1; break;
+            case 'ArrowDown': dirY = 1; break;
+            case 'ArrowLeft': dirX = -1; break;
+            case 'ArrowRight': dirX = 1; break;
+          }
+          
+          // Find closest element in the pressed direction
+          let closestEl = null;
+          let closestDist = Infinity;
+          
+          allElements.forEach(el => {
+            if (el.id === currentId) return; // Skip current element
+            
+            // Calculate vector from current to candidate
+            const dx = el.centerX - (currentEl?.centerX || el.centerX);
+            const dy = el.centerY - (currentEl?.centerY || el.centerY);
+            
+            // Check if element is in the pressed direction
+            const dotProduct = dx * dirX + dy * dirY;
+            if (dotProduct <= 0) return; // Not in the right direction
+            
+            // Calculate distance (weighted by direction alignment)
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const alignment = dotProduct / dist; // 1 = perfect alignment
+            
+            // Prioritize elements that are more aligned with the direction
+            const weightedDist = dist / alignment;
+            
+            if (weightedDist < closestDist) {
+              closestDist = weightedDist;
+              closestEl = el;
+            }
+          });
+          
+          // If no element found in direction, wrap around or do nothing
+          if (closestEl) {
+            setFocusedElementId(closestEl.id);
+            setSelectedElementIds([closestEl.id]);
+          } else if (!currentEl && allElements.length > 0) {
+            // If no current element, select the first one
+            setFocusedElementId(allElements[0].id);
+            setSelectedElementIds([allElements[0].id]);
+          }
+        }
       }
     };
 
@@ -659,7 +747,7 @@ function Builder() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [selectedElementIds, activeLayout, history, historyPointer]);
+  }, [selectedElementIds, activeLayout, history, historyPointer, isPreview]);
 
   // AOS Intersection Observer for Builder Preview
   useEffect(() => {
@@ -690,6 +778,234 @@ function Builder() {
     elements.forEach(el => observer.observe(el));
 
     return () => observer.disconnect();
+  }, [activeLayout, isPreview, activePage]);
+
+  // Media Slider Interaction Logic
+  useEffect(() => {
+    if (isPreview) return; // Only initialize in editor mode
+
+    const initSliders = () => {
+      // Find all slider containers by looking for elements with _arrow_left suffix
+      const arrowLeft = document.querySelector('[id$="_arrow_left"]');
+      if (!arrowLeft) return;
+
+      // Get the baseId from the arrow element
+      const baseId = arrowLeft.id.replace('_arrow_left', '');
+      
+      // Check if we have slider data for this slider
+      const sliderInfo = window.sliderData?.[baseId];
+      if (!sliderInfo) return;
+
+      const totalSlides = sliderInfo.slides.length;
+      let currentSlide = 0;
+      let autoplayTimer = null;
+      let isTransitioning = false;
+
+      // Get all slider elements
+      const getEl = (suffix) => document.getElementById(`${baseId}_${suffix}`);
+
+      const updateSlides = (slideIndex, direction = 'forward') => {
+        if (isTransitioning) return; // Prevent rapid transitions
+        isTransitioning = true;
+        
+        const transition = sliderInfo.transition || 'fade';
+        const duration = sliderInfo.transitionDuration || 0.5;
+        
+        // Determine exit and entry transforms based on direction
+        const getExitTransform = (isForward) => {
+          switch(transition) {
+            case 'slideLeft':
+              return isForward ? 'translateX(-100%)' : 'translateX(100%)';
+            case 'slideRight':
+              return isForward ? 'translateX(100%)' : 'translateX(-100%)';
+            case 'zoom':
+              return 'scale(0.8)';
+            case 'flip':
+              return 'perspective(1000px) rotateY(90deg)';
+            default: // fade
+              return 'none';
+          }
+        };
+
+        const getEntryTransform = (isForward) => {
+          switch(transition) {
+            case 'slideLeft':
+              return isForward ? 'translateX(100%)' : 'translateX(-100%)';
+            case 'slideRight':
+              return isForward ? 'translateX(-100%)' : 'translateX(100%)';
+            case 'zoom':
+              return 'scale(0.8)';
+            case 'flip':
+              return 'perspective(1000px) rotateY(-90deg)';
+            default: // fade
+              return 'none';
+          }
+        };
+        
+        const currentIndex = currentSlide;
+        const isForward = direction === 'forward';
+        
+        // Update images with transition effects
+        for (let i = 1; i <= totalSlides; i++) {
+          const img = getEl(`slide${i}_img`);
+          const text = getEl(`slide${i}_text`);
+          
+          if (i === slideIndex) {
+            // Entry slide - start from entry position
+            if (img) {
+              img.style.transition = 'none';
+              img.style.opacity = '1';
+              img.style.transform = getEntryTransform(isForward);
+              img.style.zIndex = '1';
+              
+              // Force reflow
+              img.offsetHeight;
+              
+              // Animate to final position
+              img.style.transition = `all ${duration}s ease-in-out`;
+              img.style.transform = 'translateX(0) scale(1) rotateY(0deg)';
+              img.style.zIndex = '2';
+            }
+            if (text) {
+              text.style.transition = `opacity ${duration}s ease-in-out`;
+              text.style.opacity = '1';
+            }
+          } else if (i === currentIndex) {
+            // Exit slide - animate out
+            if (img) {
+              img.style.transition = `all ${duration}s ease-in-out`;
+              img.style.opacity = '0';
+              img.style.transform = getExitTransform(isForward);
+              img.style.zIndex = '1';
+            }
+            if (text) {
+              text.style.transition = `opacity ${duration}s ease-in-out`;
+              text.style.opacity = '0';
+            }
+          } else {
+            // Other slides - hide immediately
+            if (img) {
+              img.style.transition = 'none';
+              img.style.opacity = '0';
+              img.style.transform = 'none';
+              img.style.zIndex = '0';
+            }
+            if (text) {
+              text.style.transition = 'none';
+              text.style.opacity = '0';
+            }
+          }
+        }
+
+        // Update dots
+        for (let i = 1; i <= totalSlides; i++) {
+          const dot = getEl(`dot${i}`);
+          if (dot) {
+            dot.style.transition = `all ${duration}s ease-in-out`;
+            dot.style.backgroundColor = i === slideIndex ? '#6366f1' : 'rgba(255,255,255,0.4)';
+            dot.style.transform = i === slideIndex ? 'scale(1.3)' : 'scale(1)';
+            dot.style.boxShadow = i === slideIndex ? '0 0 10px rgba(99,102,241,0.8)' : 'none';
+          }
+        }
+
+        currentSlide = slideIndex;
+        
+        // Allow next transition after animation completes
+        setTimeout(() => {
+          isTransitioning = false;
+        }, duration * 1000);
+      };
+
+      // Arrow click handlers
+      const leftArrow = getEl('arrow_left');
+      const rightArrow = getEl('arrow_right');
+
+      if (leftArrow) {
+        leftArrow.onclick = (e) => {
+          e.stopPropagation();
+          const newSlide = currentSlide === 0 ? totalSlides - 1 : currentSlide - 1;
+          const direction = currentSlide === 0 ? 'backward' : 'backward';
+          updateSlides(newSlide, direction);
+          resetAutoplay();
+        };
+      }
+
+      if (rightArrow) {
+        rightArrow.onclick = (e) => {
+          e.stopPropagation();
+          const newSlide = currentSlide === totalSlides - 1 ? 0 : currentSlide + 1;
+          const direction = currentSlide === totalSlides - 1 ? 'forward' : 'forward';
+          updateSlides(newSlide, direction);
+          resetAutoplay();
+        };
+      }
+
+      // Dot click handlers
+      for (let i = 1; i <= totalSlides; i++) {
+        const dot = getEl(`dot${i}`);
+        if (dot) {
+          dot.onclick = (e) => {
+            e.stopPropagation();
+            const direction = i - 1 > currentSlide ? 'forward' : 'backward';
+            updateSlides(i - 1, direction);
+            resetAutoplay();
+          };
+        }
+      }
+
+      // Autoplay
+      const startAutoplay = () => {
+        autoplayTimer = setInterval(() => {
+          const newSlide = currentSlide === totalSlides - 1 ? 0 : currentSlide + 1;
+          // When looping from last to first, use backward direction for smooth transition
+          const direction = currentSlide === totalSlides - 1 ? 'backward' : 'forward';
+          updateSlides(newSlide, direction);
+        }, sliderInfo.autoPlayInterval);
+      };
+
+      const resetAutoplay = () => {
+        if (autoplayTimer) clearInterval(autoplayTimer);
+        startAutoplay();
+      };
+
+      // Pause on hover
+      const container = getEl('container');
+      if (container) {
+        container.onmouseenter = () => {
+          if (autoplayTimer) clearInterval(autoplayTimer);
+        };
+        container.onmouseleave = () => {
+          startAutoplay();
+        };
+      }
+
+      // Start autoplay
+      startAutoplay();
+
+      // Store cleanup function
+      return () => {
+        if (autoplayTimer) clearInterval(autoplayTimer);
+      };
+    };
+
+    // Initialize all sliders on the page
+    const cleanupFns = [];
+    const sliders = new Set();
+    
+    // Find all unique slider baseIds
+    document.querySelectorAll('[id$="_arrow_left"]').forEach(el => {
+      const baseId = el.id.replace('_arrow_left', '');
+      sliders.add(baseId);
+    });
+
+    sliders.forEach(baseId => {
+      const cleanup = initSliders();
+      if (cleanup) cleanupFns.push(cleanup);
+    });
+
+    return () => {
+      cleanupFns.forEach(fn => fn());
+    };
   }, [activeLayout, isPreview, activePage]);
 
   // Sidebar Resizing Handlers
@@ -2008,6 +2324,26 @@ function Builder() {
         width: 300,
         height: 45,
         styles: { padding: '10 15', backgroundColor: '#1e293b', color: '#ffffff', borderRadius: '6', border: '1px solid #334155' }
+      },
+      image_slider: {
+        type: 'image_slider',
+        content: {
+          slides: [
+            { id: 'slide1', image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=800&q=80', caption: 'Slide 1 - Beautiful Landscape' },
+            { id: 'slide2', image: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=800&q=80', caption: 'Slide 2 - Nature View' },
+            { id: 'slide3', image: 'https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?auto=format&fit=crop&w=800&q=80', caption: 'Slide 3 - Forest Path' }
+          ],
+          autoPlay: true,
+          autoPlayInterval: 3000,
+          showArrows: true,
+          showDots: true,
+          height: 400,
+          transition: 'fade', // fade, slideLeft, slideRight, zoom, flip
+          transitionDuration: 0.5
+        },
+        width: 800,
+        height: 400,
+        styles: { borderRadius: '8', marginBottom: '15' }
       }
     };
 
@@ -2590,6 +2926,7 @@ function Builder() {
 
   const renderCanvasElement = (el, disableRnd = false) => {
     const isSelected = selectedElementIds.includes(el.id);
+    const isFocused = focusedElementId === el.id && !isSelected;
     // Search dimming — canvas-level filter, no individual element code touched
     const isSearchDimmed = isSearchActive && !matchedElementIds.has(el.id);
     
@@ -2848,13 +3185,13 @@ function Builder() {
             setSelectedElementId(el.id);
             setContextMenu({ x: e.clientX, y: e.clientY, elementId: el.id });
           }}
-          className={`builder-canvas-element ${isSelected && !isPreview ? 'selected' : ''}`}
+          className={`builder-canvas-element ${isSelected && !isPreview ? 'selected' : ''} ${isFocused && !isPreview ? 'focused' : ''}`}
           data-element-id={el.id}
           style={{
             position: 'absolute',
             display: 'inline-block',
             zIndex: el.styles?.zIndex || 10,
-            outline: isSelected && !isPreview ? '2px dashed rgba(99, 102, 241, 0.5)' : 'none',
+            outline: isSelected && !isPreview ? '2px dashed rgba(99, 102, 241, 0.5)' : isFocused && !isPreview ? '2px solid rgba(99, 102, 241, 0.8)' : 'none',
             outlineOffset: '2px',
             ...inlineStyles
           }}
@@ -3188,6 +3525,259 @@ function Builder() {
       );
     }
 
+    if (el.type === 'image_slider') {
+      const slides = el.content?.slides || [];
+      const showArrows = el.content?.showArrows !== false;
+      const showDots = el.content?.showDots !== false;
+      const sliderHeight = el.content?.height || el.height || 400;
+      const transition = el.content?.transition || 'fade';
+      const transitionDuration = el.content?.transitionDuration || 0.5;
+      const baseId = `slider_${el.id}`;
+      
+      // Store slider data globally for the interaction script
+      if (!window.sliderData) window.sliderData = {};
+      window.sliderData[baseId] = {
+        slides,
+        autoPlayInterval: el.content?.autoPlayInterval || 3000,
+        totalSlides: slides.length,
+        transition,
+        transitionDuration
+      };
+
+      // Get transition CSS based on type
+      const getTransitionStyle = (index, isActive) => {
+        const duration = `${transitionDuration}s`;
+        const baseTransition = `all ${duration} ease-in-out`;
+        
+        if (!isActive) {
+          // Hidden slides
+          switch(transition) {
+            case 'fade':
+              return { opacity: 0, transition: baseTransition };
+            case 'slideLeft':
+              return { opacity: 0, transform: 'translateX(100%)', transition: baseTransition };
+            case 'slideRight':
+              return { opacity: 0, transform: 'translateX(-100%)', transition: baseTransition };
+            case 'zoom':
+              return { opacity: 0, transform: 'scale(0.8)', transition: baseTransition };
+            case 'flip':
+              return { opacity: 0, transform: 'perspective(1000px) rotateY(90deg)', transition: baseTransition };
+            default:
+              return { opacity: 0, transition: baseTransition };
+          }
+        } else {
+          // Active slide
+          switch(transition) {
+            case 'fade':
+              return { opacity: 1, transition: baseTransition };
+            case 'slideLeft':
+              return { opacity: 1, transform: 'translateX(0)', transition: baseTransition };
+            case 'slideRight':
+              return { opacity: 1, transform: 'translateX(0)', transition: baseTransition };
+            case 'zoom':
+              return { opacity: 1, transform: 'scale(1)', transition: baseTransition };
+            case 'flip':
+              return { opacity: 1, transform: 'perspective(1000px) rotateY(0deg)', transition: baseTransition };
+            default:
+              return { opacity: 1, transition: baseTransition };
+          }
+        }
+      };
+
+      return wrapWithRnd(
+        <div 
+          id={`${baseId}_container`}
+          style={{ 
+            width: '100%', 
+            height: `${sliderHeight}px`, 
+            position: 'relative', 
+            overflow: 'hidden', 
+            borderRadius: 'inherit',
+            ...styles 
+          }}
+        >
+          {/* Slides */}
+          {slides.map((slide, idx) => (
+            <div
+              key={slide.id || idx}
+              id={`${baseId}_slide${idx + 1}_img`}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                ...getTransitionStyle(idx, idx === 0),
+                zIndex: 1,
+              }}
+            >
+              <img 
+                src={slide.image} 
+                alt={slide.caption || `Slide ${idx + 1}`}
+                style={{ 
+                  width: '100%', 
+                  height: '100%', 
+                  objectFit: 'cover',
+                  display: 'block',
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                }}
+                draggable={false}
+              />
+            </div>
+          ))}
+
+          {/* Caption overlay */}
+          {slides[0]?.caption && (
+            <div
+              id={`${baseId}_slide1_text`}
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                padding: '20px',
+                background: 'linear-gradient(transparent, rgba(0,0,0,0.7))',
+                color: '#fff',
+                fontSize: '14px',
+                zIndex: 2,
+                opacity: 1,
+                transition: `opacity ${transitionDuration}s ease-in-out`,
+              }}
+            >
+              {slides[0].caption}
+            </div>
+          )}
+
+          {/* Navigation Arrows - Enhanced with better visibility */}
+          {showArrows && slides.length > 1 && (
+            <>
+              <button
+                id={`${baseId}_arrow_left`}
+                type="button"
+                style={{
+                  position: 'absolute',
+                  left: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'rgba(0,0,0,0.6)',
+                  backdropFilter: 'blur(10px)',
+                  color: '#fff',
+                  border: '2px solid rgba(255,255,255,0.2)',
+                  borderRadius: '50%',
+                  width: '44px',
+                  height: '44px',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '20px',
+                  fontWeight: 'bold',
+                  transition: 'all 0.3s ease',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(99,102,241,0.9)';
+                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.5)';
+                  e.currentTarget.style.transform = 'translateY(-50%) scale(1.1)';
+                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(99,102,241,0.5)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(0,0,0,0.6)';
+                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
+                  e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+                }}
+              >
+                ‹
+              </button>
+              <button
+                id={`${baseId}_arrow_right`}
+                type="button"
+                style={{
+                  position: 'absolute',
+                  right: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'rgba(0,0,0,0.6)',
+                  backdropFilter: 'blur(10px)',
+                  color: '#fff',
+                  border: '2px solid rgba(255,255,255,0.2)',
+                  borderRadius: '50%',
+                  width: '44px',
+                  height: '44px',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '20px',
+                  fontWeight: 'bold',
+                  transition: 'all 0.3s ease',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(99,102,241,0.9)';
+                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.5)';
+                  e.currentTarget.style.transform = 'translateY(-50%) scale(1.1)';
+                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(99,102,241,0.5)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(0,0,0,0.6)';
+                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
+                  e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+                }}
+              >
+                ›
+              </button>
+            </>
+          )}
+
+          {/* Dots - Enhanced with better styling */}
+          {showDots && slides.length > 1 && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: slides[0]?.caption ? '50px' : '15px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                gap: '10px',
+                zIndex: 10,
+                padding: '8px 12px',
+                background: 'rgba(0,0,0,0.4)',
+                backdropFilter: 'blur(10px)',
+                borderRadius: '20px',
+                border: '1px solid rgba(255,255,255,0.1)',
+              }}
+            >
+              {slides.map((_, idx) => (
+                <button
+                  key={idx}
+                  id={`${baseId}_dot${idx + 1}`}
+                  type="button"
+                  style={{
+                    width: '10px',
+                    height: '10px',
+                    borderRadius: '50%',
+                    border: 'none',
+                    background: idx === 0 ? '#6366f1' : 'rgba(255,255,255,0.4)',
+                    cursor: 'pointer',
+                    transform: idx === 0 ? 'scale(1.3)' : 'scale(1)',
+                    transition: 'all 0.3s ease',
+                    padding: 0,
+                    boxShadow: idx === 0 ? '0 0 10px rgba(99,102,241,0.8)' : 'none',
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     return null;
   };
 
@@ -3335,6 +3925,73 @@ function Builder() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'nowrap' }}>
           {!isPreview && (
             <>
+              {/* Page Navigation Switcher */}
+              <div style={{ display: 'flex', gap: '2px', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}>
+                <button 
+                  onClick={() => {
+                    const currentIdx = pages.findIndex(p => p.id === activePage?.id);
+                    if (currentIdx > 0) {
+                      handleSwitchPage(pages[currentIdx - 1]);
+                    }
+                  }}
+                  disabled={pages.length <= 1 || pages.findIndex(p => p.id === activePage?.id) === 0}
+                  className="btn-secondary"
+                  style={{ 
+                    padding: '6px 10px', 
+                    opacity: pages.length <= 1 || pages.findIndex(p => p.id === activePage?.id) === 0 ? 0.4 : 1 
+                  }}
+                  title="Previous Page"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <button 
+                  onClick={() => {
+                    const currentIdx = pages.findIndex(p => p.id === activePage?.id);
+                    if (currentIdx < pages.length - 1) {
+                      handleSwitchPage(pages[currentIdx + 1]);
+                    }
+                  }}
+                  disabled={pages.length <= 1 || pages.findIndex(p => p.id === activePage?.id) === pages.length - 1}
+                  className="btn-secondary"
+                  style={{ 
+                    padding: '6px 10px', 
+                    opacity: pages.length <= 1 || pages.findIndex(p => p.id === activePage?.id) === pages.length - 1 ? 0.4 : 1 
+                  }}
+                  title="Next Page"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+
+              {/* Page Dropdown Switcher */}
+              {pages.length > 2 && (
+                <select
+                  value={activePage?.id || ''}
+                  onChange={(e) => {
+                    const page = pages.find(p => p.id === parseInt(e.target.value));
+                    if (page) handleSwitchPage(page);
+                  }}
+                  style={{
+                    background: 'rgba(0,0,0,0.2)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: '#fff',
+                    padding: '6px 10px',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    outline: 'none',
+                    maxWidth: '150px'
+                  }}
+                  title="Quick Page Switch"
+                >
+                  {pages.map(p => (
+                    <option key={p.id} value={p.id} style={{ background: '#1e293b' }}>
+                      {p.title} (/{p.slug})
+                    </option>
+                  ))}
+                </select>
+              )}
+
               {/* History Controls */}
               <div style={{ display: 'flex', gap: '2px', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}>
                 <button onClick={handleUndo} disabled={historyPointer <= 0} className="btn-secondary" style={{ padding: '6px 10px', opacity: historyPointer <= 0 ? 0.4 : 1 }} title="Undo">
@@ -3679,6 +4336,15 @@ function Builder() {
                       style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab', gridColumn: 'span 2' }}
                     >
                       <Search size={18} style={{ color: 'var(--primary)' }} /> Site Search Bar
+                    </button>
+                    <button 
+                      draggable 
+                      onDragStart={(e) => e.dataTransfer.setData("elementType", "image_slider")}
+                      onClick={() => handleAddElement('image_slider')} 
+                      className="btn-secondary" 
+                      style={{ flexDirection: 'column', height: '70px', padding: '10px', fontSize: '12px', cursor: 'grab', gridColumn: 'span 2' }}
+                    >
+                      <ImageIcon size={18} style={{ color: 'var(--accent)' }} /> Image Slider (Carousel)
                     </button>
                   </div>
 
@@ -4457,6 +5123,181 @@ function Builder() {
                   </span>
                 </div>
 
+                {/* Movement Widget */}
+                <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '8px' }}>
+                  <h4 style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--primary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Move size={12} /> Position Control
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                    {/* Up Arrow */}
+                    <button
+                      onClick={() => {
+                        const nextLayout = activeLayout.map(sec => ({
+                          ...sec,
+                          elements: (sec.elements || []).map(el => {
+                            if (selectedElementIds.includes(el.id)) {
+                              return { ...el, y: Math.max(0, (el.y || 0) - 1) };
+                            }
+                            return el;
+                          })
+                        }));
+                        updateLayout(nextLayout);
+                      }}
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: '11px', width: '100%', maxWidth: '120px' }}
+                      title="Move Up 1px"
+                    >
+                      <ArrowUpIcon size={14} /> Up
+                    </button>
+                    
+                    {/* Left, Down, Right Row */}
+                    <div style={{ display: 'flex', gap: '4px', width: '100%', maxWidth: '120px' }}>
+                      <button
+                        onClick={() => {
+                          const nextLayout = activeLayout.map(sec => ({
+                            ...sec,
+                            elements: (sec.elements || []).map(el => {
+                              if (selectedElementIds.includes(el.id)) {
+                                return { ...el, x: Math.max(0, (el.x || 0) - 1) };
+                              }
+                              return el;
+                            })
+                          }));
+                          updateLayout(nextLayout);
+                        }}
+                        className="btn-secondary"
+                        style={{ padding: '6px 10px', fontSize: '11px', flex: 1 }}
+                        title="Move Left 1px"
+                      >
+                        <ArrowLeftIcon size={14} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          const nextLayout = activeLayout.map(sec => ({
+                            ...sec,
+                            elements: (sec.elements || []).map(el => {
+                              if (selectedElementIds.includes(el.id)) {
+                                return { ...el, y: (el.y || 0) + 1 };
+                              }
+                              return el;
+                            })
+                          }));
+                          updateLayout(nextLayout);
+                        }}
+                        className="btn-secondary"
+                        style={{ padding: '6px 10px', fontSize: '11px', flex: 1 }}
+                        title="Move Down 1px"
+                      >
+                        <ArrowDownIcon size={14} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          const nextLayout = activeLayout.map(sec => ({
+                            ...sec,
+                            elements: (sec.elements || []).map(el => {
+                              if (selectedElementIds.includes(el.id)) {
+                                return { ...el, x: (el.x || 0) + 1 };
+                              }
+                              return el;
+                            })
+                          }));
+                          updateLayout(nextLayout);
+                        }}
+                        className="btn-secondary"
+                        style={{ padding: '6px 10px', fontSize: '11px', flex: 1 }}
+                        title="Move Right 1px"
+                      >
+                        <ArrowRightIcon size={14} />
+                      </button>
+                    </div>
+                    
+                    {/* Shift + Move Buttons (10px) */}
+                    <div style={{ display: 'flex', gap: '4px', width: '100%', maxWidth: '120px', marginTop: '2px' }}>
+                      <button
+                        onClick={() => {
+                          const nextLayout = activeLayout.map(sec => ({
+                            ...sec,
+                            elements: (sec.elements || []).map(el => {
+                              if (selectedElementIds.includes(el.id)) {
+                                return { ...el, x: Math.max(0, (el.x || 0) - 10) };
+                              }
+                              return el;
+                            })
+                          }));
+                          updateLayout(nextLayout);
+                        }}
+                        className="btn-secondary"
+                        style={{ padding: '4px 8px', fontSize: '10px', flex: 1, opacity: 0.7 }}
+                        title="Move Left 10px (Shift+Left)"
+                      >
+                        ←10
+                      </button>
+                      <button
+                        onClick={() => {
+                          const nextLayout = activeLayout.map(sec => ({
+                            ...sec,
+                            elements: (sec.elements || []).map(el => {
+                              if (selectedElementIds.includes(el.id)) {
+                                return { ...el, x: (el.x || 0) + 10 };
+                              }
+                              return el;
+                            })
+                          }));
+                          updateLayout(nextLayout);
+                        }}
+                        className="btn-secondary"
+                        style={{ padding: '4px 8px', fontSize: '10px', flex: 1, opacity: 0.7 }}
+                        title="Move Right 10px (Shift+Right)"
+                      >
+                        10→
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '4px', width: '100%', maxWidth: '120px' }}>
+                      <button
+                        onClick={() => {
+                          const nextLayout = activeLayout.map(sec => ({
+                            ...sec,
+                            elements: (sec.elements || []).map(el => {
+                              if (selectedElementIds.includes(el.id)) {
+                                return { ...el, y: Math.max(0, (el.y || 0) - 10) };
+                              }
+                              return el;
+                            })
+                          }));
+                          updateLayout(nextLayout);
+                        }}
+                        className="btn-secondary"
+                        style={{ padding: '4px 8px', fontSize: '10px', flex: 1, opacity: 0.7 }}
+                        title="Move Up 10px (Shift+Up)"
+                      >
+                        ↑10
+                      </button>
+                      <button
+                        onClick={() => {
+                          const nextLayout = activeLayout.map(sec => ({
+                            ...sec,
+                            elements: (sec.elements || []).map(el => {
+                              if (selectedElementIds.includes(el.id)) {
+                                return { ...el, y: (el.y || 0) + 10 };
+                              }
+                              return el;
+                            })
+                          }));
+                          updateLayout(nextLayout);
+                        }}
+                        className="btn-secondary"
+                        style={{ padding: '4px 8px', fontSize: '10px', flex: 1, opacity: 0.7 }}
+                        title="Move Down 10px (Shift+Down)"
+                      >
+                        10↓
+                      </button>
+                    </div>
+                  </div>
+                  <p style={{ fontSize: '9px', color: 'var(--text-secondary)', marginTop: '8px', textAlign: 'center', fontStyle: 'italic' }}>
+                    Use arrow keys for 1px • Hold Shift for 10px
+                  </p>
+                </div>
+
                 <div style={{ marginBottom: '20px' }}>
                   <h4 style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Element Content</h4>
                   
@@ -4548,6 +5389,137 @@ function Builder() {
                         onChange={(e) => updateSelectedElement({ content: { alt: e.target.value } })}
                         placeholder="Image description"
                       />
+                    </div>
+                  )}
+
+                  {selectedElement.type === 'image_slider' && (
+                    <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '8px' }}>
+                      <h4 style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--primary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Slide Images
+                      </h4>
+                      {(selectedElement.content?.slides || []).map((slide, idx) => (
+                        <div key={slide.id || idx} style={{ marginBottom: '10px', padding: '8px', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
+                          <label style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '4px', display: 'block' }}>
+                            Slide {idx + 1}
+                          </label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                const updatedSlides = [...(selectedElement.content?.slides || [])];
+                                updatedSlides[idx] = { ...updatedSlides[idx], image: ev.target.result };
+                                updateSelectedElement({ content: { slides: updatedSlides } });
+                              };
+                              reader.readAsDataURL(file);
+                            }}
+                            style={{ fontSize: '10px', padding: '4px 0', marginBottom: '4px' }}
+                          />
+                          {slide.image && (
+                            <div style={{ fontSize: '9px', color: '#22c55e', marginTop: '2px' }}>
+                              ✓ Image uploaded
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      
+                      {/* Transition Controls */}
+                      <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                        <h4 style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--primary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Transition Effect
+                        </h4>
+                        
+                        <div style={{ marginBottom: '10px' }}>
+                          <label style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '4px', display: 'block' }}>
+                            Animation Type
+                          </label>
+                          <select
+                            value={selectedElement.content?.transition || 'fade'}
+                            onChange={(e) => updateSelectedElement({ content: { transition: e.target.value } })}
+                            style={{ width: '100%', fontSize: '11px', padding: '4px', background: 'rgba(0,0,0,0.3)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px' }}
+                          >
+                            <option value="fade">Fade</option>
+                            <option value="slideLeft">Slide Left</option>
+                            <option value="slideRight">Slide Right</option>
+                            <option value="zoom">Zoom</option>
+                            <option value="flip">Flip</option>
+                          </select>
+                        </div>
+
+                        <div style={{ marginBottom: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <label style={{ fontSize: '10px', color: '#94a3b8' }}>Duration</label>
+                            <span style={{ fontSize: '10px', color: 'var(--primary)' }}>{selectedElement.content?.transitionDuration || 0.5}s</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.1"
+                            max="2"
+                            step="0.1"
+                            value={selectedElement.content?.transitionDuration || 0.5}
+                            onChange={(e) => updateSelectedElement({ content: { transitionDuration: parseFloat(e.target.value) } })}
+                            style={{ width: '100%', padding: 0 }}
+                          />
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '10px' }}>
+                          <div>
+                            <label style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '4px', display: 'block' }}>
+                              Autoplay
+                            </label>
+                            <select
+                              value={selectedElement.content?.autoPlay ? 'true' : 'false'}
+                              onChange={(e) => updateSelectedElement({ content: { autoPlay: e.target.value === 'true' } })}
+                              style={{ width: '100%', fontSize: '10px', padding: '4px', background: 'rgba(0,0,0,0.3)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px' }}
+                            >
+                              <option value="true">Enabled</option>
+                              <option value="false">Disabled</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '4px', display: 'block' }}>
+                              Interval (ms)
+                            </label>
+                            <input
+                              type="number"
+                              min="1000"
+                              max="10000"
+                              step="500"
+                              value={selectedElement.content?.autoPlayInterval || 3000}
+                              onChange={(e) => updateSelectedElement({ content: { autoPlayInterval: parseInt(e.target.value) } })}
+                              style={{ width: '100%', fontSize: '10px', padding: '4px', background: 'rgba(0,0,0,0.3)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px' }}
+                            />
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#94a3b8', cursor: 'pointer', flex: 1 }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedElement.content?.showArrows !== false}
+                              onChange={(e) => updateSelectedElement({ content: { showArrows: e.target.checked } })}
+                              style={{ width: 'auto', cursor: 'pointer' }}
+                            />
+                            Arrows
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#94a3b8', cursor: 'pointer', flex: 1 }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedElement.content?.showDots !== false}
+                              onChange={(e) => updateSelectedElement({ content: { showDots: e.target.checked } })}
+                              style={{ width: 'auto', cursor: 'pointer' }}
+                            />
+                            Dots
+                          </label>
+                        </div>
+                      </div>
+                      
+                      <p style={{ fontSize: '9px', color: 'var(--text-secondary)', marginTop: '6px', fontStyle: 'italic' }}>
+                        Upload images from your device for each slide
+                      </p>
                     </div>
                   )}
 
