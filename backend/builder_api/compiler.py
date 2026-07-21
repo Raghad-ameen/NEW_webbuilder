@@ -1,5 +1,6 @@
 import re
 import urllib.parse
+import json
 
 def camel_to_kebab(styles_dict):
     if not styles_dict:
@@ -194,6 +195,172 @@ def render_compiled_element(el, site_id):
     elif el_type == 'shape':
         inner_markup = '<div style="width: 100%; height: 100%; border-radius: inherit; background: inherit;"></div>'
         
+    elif el_type == 'image_slider':
+        slides = content.get('slides', [])
+        show_arrows = content.get('showArrows', True) != False
+        show_dots = content.get('showDots', True) != False
+        slider_height = content.get('height') or el.get('height') or 400
+        transition = content.get('transition', 'fade')
+        transition_duration = content.get('transitionDuration', 0.5)
+        base_id = f"slider_{el.get('id', '')}"
+        
+        config_data = {
+            'slides': slides,
+            'autoPlayInterval': content.get('autoPlayInterval', 3000),
+            'transition': transition,
+            'transitionDuration': transition_duration
+        }
+        config_str = json.dumps(config_data).replace("'", "&#39;").replace('"', "&quot;")
+        
+        slides_html = []
+        for idx, slide in enumerate(slides):
+            opacity = 1 if idx == 0 else 0
+            z_index = 2 if idx == 0 else 1
+            slide_image = slide.get('image', '')
+            slide_caption = slide.get('caption', f"Slide {idx + 1}")
+            slides_html.append(f"""
+                <div id="{base_id}_slide{idx + 1}_img" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: {opacity}; transition: all {transition_duration}s ease-in-out; z-index: {z_index};">
+                    <img src="{slide_image}" alt="{slide_caption}" style="width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; user-select: none;" draggable="false" />
+                </div>
+            """)
+        slides_str = "".join(slides_html)
+        
+        caption_html = ""
+        if slides and slides[0].get('caption'):
+            caption_html = f"""
+                <div id="{base_id}_slide1_text" style="position: absolute; bottom: 0; left: 0; right: 0; padding: 20px; background: linear-gradient(transparent, rgba(0,0,0,0.7)); color: #fff; font-size: 14px; z-index: 3; opacity: 1; transition: opacity {transition_duration}s ease-in-out;">
+                    {slides[0]['caption']}
+                </div>
+            """
+            
+        arrows_html = ""
+        if show_arrows and len(slides) > 1:
+            arrows_html = f"""
+                <button id="{base_id}_arrow_left" type="button" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.6); backdrop-filter: blur(10px); color: #fff; border: 2px solid rgba(255,255,255,0.2); border-radius: 50%; width: 44px; height: 44px; cursor: pointer; z-index: 10; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">‹</button>
+                <button id="{base_id}_arrow_right" type="button" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.6); backdrop-filter: blur(10px); color: #fff; border: 2px solid rgba(255,255,255,0.2); border-radius: 50%; width: 44px; height: 44px; cursor: pointer; z-index: 10; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">›</button>
+            """
+            
+        dots_html = ""
+        if show_dots and len(slides) > 1:
+            bottom_pos = '50px' if (slides and slides[0].get('caption')) else '15px'
+            dots_buttons = []
+            for idx in range(len(slides)):
+                bg_color = '#6366f1' if idx == 0 else 'rgba(255,255,255,0.4)'
+                transform = 'scale(1.3)' if idx == 0 else 'scale(1)'
+                box_shadow = '0 0 10px rgba(99,102,241,0.8)' if idx == 0 else 'none'
+                dots_buttons.append(f'<button id="{base_id}_dot{idx + 1}" type="button" style="width: 10px; height: 10px; border-radius: 50%; border: none; background: {bg_color}; cursor: pointer; transform: {transform}; transition: all 0.3s ease; padding: 0; box-shadow: {box_shadow};"></button>')
+            dots_buttons_str = "".join(dots_buttons)
+            dots_html = f"""
+                <div style="position: absolute; bottom: {bottom_pos}; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 10; padding: 8px 12px; background: rgba(0,0,0,0.4); backdrop-filter: blur(10px); border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);">
+                    {dots_buttons_str}
+                </div>
+            """
+            
+        inner_markup = f"""
+            <div id="{base_id}_container" data-slider-config="{config_str}" style="width: 100%; height: {slider_height}px; position: relative; overflow: hidden; border-radius: inherit;">
+                {slides_str}
+                {caption_html}
+                {arrows_html}
+                {dots_html}
+            </div>
+        """
+        
+    elif el_type == 'nav_arrow':
+        dir = content.get('direction', 'next')
+        nav_type = content.get('navType', 'page')
+        arrow_style = content.get('arrowStyle', 'chevron')
+        arrow_form = content.get('arrowForm', 'circle')
+        size = min(int(width or 50), int(height or 50)) * 0.5
+        
+        color = styles.get('color', '#ffffff')
+        bg_color = styles.get('backgroundColor', 'rgba(0,0,0,0.5)')
+        
+        form_border_radius = '50%'
+        form_bg = bg_color
+        form_border = 'none'
+        form_backdrop = 'none'
+        form_shadow = 'none'
+        
+        if arrow_form == 'square':
+            form_border_radius = '0px'
+        elif arrow_form == 'rounded':
+            form_border_radius = '8px'
+        elif arrow_form == 'glassmorphism':
+            form_border_radius = '50%'
+            form_bg = 'rgba(255, 255, 255, 0.15)'
+            form_backdrop = 'blur(10px)'
+            form_border = '1px solid rgba(255, 255, 255, 0.25)'
+            form_shadow = '0 8px 32px 0 rgba(0, 0, 0, 0.2)'
+        elif arrow_form == 'outline':
+            form_border_radius = '50%'
+            form_bg = 'transparent'
+            form_border = f"2px solid {color}"
+        elif arrow_form == 'minimal':
+            form_border_radius = '0px'
+            form_bg = 'transparent'
+            form_border = 'none'
+            
+        is_next = dir == 'next'
+        svg_content = ''
+        if arrow_style == 'arrow':
+            svg_content = f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>' if is_next else f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>'
+        elif arrow_style == 'long-arrow':
+            svg_content = f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="12" x2="20" y2="12" /><polyline points="14 6 20 12 14 18" /></svg>' if is_next else f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="12" x2="4" y2="12" /><polyline points="10 6 4 12 10 18" /></svg>'
+        elif arrow_style == 'triangle':
+            rot = '90deg' if is_next else '-90deg'
+            svg_content = f'<svg width="{size * 0.8}" height="{size * 0.8}" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate({rot}); transform-origin: center;"><path d="M3 20h18L12 4z"/></svg>'
+        elif arrow_style == 'double-chevron':
+            svg_content = f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7" /><polyline points="6 17 11 12 6 7" /></svg>' if is_next else f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7" /><polyline points="18 17 13 12 18 7" /></svg>'
+        else: # chevron
+            svg_content = f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>' if is_next else f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>'
+            
+        el_styles_list = [s for s in el_styles_list if not any(x in s for x in ['border-radius', 'background-color', 'border:', 'backdrop-filter', 'box-shadow'])]
+        el_styles_list.append(f"border-radius: {form_border_radius} !important")
+        el_styles_list.append(f"background-color: {form_bg} !important")
+        if form_border != 'none':
+            el_styles_list.append(f"border: {form_border} !important")
+        if form_backdrop != 'none':
+            el_styles_list.append(f"backdrop-filter: {form_backdrop} !important")
+            el_styles_list.append(f"-webkit-backdrop-filter: {form_backdrop} !important")
+        if form_shadow != 'none':
+            el_styles_list.append(f"box-shadow: {form_shadow} !important")
+            
+        el_styles_list.append("transition: all 0.2s ease")
+        el_styles_list.append("cursor: pointer")
+        el_styles_list.append("display: flex")
+        el_styles_list.append("align-items: center")
+        el_styles_list.append("justify-content: center")
+        el_styles_str = "; ".join(el_styles_list) + ";"
+        
+        click_handler = ''
+        if nav_type == 'slider':
+            target_id = content.get('targetSliderId', '')
+            click_handler = f"""
+              if (window.sliderControllers) {{
+                const controllers = window.sliderControllers;
+                const targetId = '{target_id}';
+                if (targetId && controllers['slider_' + targetId]) {{
+                  controllers['slider_' + targetId]['{'next' if is_next else 'prev'}']();
+                }} else {{
+                  const firstKey = Object.keys(controllers)[0];
+                  if (firstKey) controllers[firstKey]['{'next' if is_next else 'prev'}']();
+                }}
+              }}
+            """
+        else:
+            click_handler = f"window.navigateToPageDir('{dir}')"
+            
+        inner_markup = f"""
+            <div 
+              style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"
+              onclick="event.stopPropagation(); {click_handler.strip().replace(chr(10), ' ')}"
+              onmouseenter="this.style.transform = 'scale(1.1)'; this.style.opacity = '0.9';"
+              onmouseleave="this.style.transform = 'scale(1)'; this.style.opacity = '1';"
+            >
+              {svg_content}
+            </div>
+        """
+        
     elif el_type == 'icon':
         icon_name = content.get('icon', 'Star').lower()
         inner_markup = f'<i data-lucide="{icon_name}" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: inherit;"></i>'
@@ -338,6 +505,7 @@ def compile_layout_to_html(site, page, pages_list):
     """
     layout = migrate_layout(page.layout)
     theme = site.theme or {}
+    pages_json = json.dumps([{"slug": p.slug} for p in pages_list])
     
     # Global styles from Theme
     bg_color = theme.get('backgroundColor', '#ffffff')
@@ -660,6 +828,218 @@ def compile_layout_to_html(site, page, pages_list):
         if (window.lucide) {{
             lucide.createIcons();
         }}
+
+        // Page Navigation Logic
+        const PAGES = {pages_json};
+        const CURRENT_PAGE_SLUG = "{page.slug}";
+        
+        window.navigateToPageDir = function(dir) {{
+            const currentIndex = PAGES.findIndex(p => p.slug === CURRENT_PAGE_SLUG);
+            if (currentIndex === -1) return;
+            
+            let nextIndex = currentIndex;
+            if (dir === 'next') {{
+                nextIndex = (currentIndex === PAGES.length - 1) ? 0 : currentIndex + 1;
+            }} else {{
+                nextIndex = (currentIndex === 0) ? PAGES.length - 1 : currentIndex - 1;
+            }}
+            
+            const targetPage = PAGES[nextIndex];
+            if (targetPage) {{
+                const dest = targetPage.slug === 'home' ? 'index.html' : targetPage.slug + '.html';
+                window.location.href = dest;
+            }}
+        }};
+
+        // Media Slider Interaction Logic (Supports Multiple Sliders & 0-indexed loop)
+        (function() {{
+            window.sliderControllers = window.sliderControllers || {{}};
+            
+            const initSliders = () => {{
+              const containers = document.querySelectorAll('[id$="_container"][data-slider-config]');
+              containers.forEach(container => {{
+                const baseId = container.id.replace('_container', '');
+                
+                if (window.sliderControllers[baseId] && window.sliderControllers[baseId].interval) {{
+                  clearInterval(window.sliderControllers[baseId].interval);
+                }}
+
+                let sliderInfo;
+                try {{
+                  const rawConfig = container.getAttribute('data-slider-config');
+                  sliderInfo = JSON.parse(rawConfig);
+                }} catch (e) {{
+                  console.error("Failed to parse slider config", e);
+                  return;
+                }}
+                
+                const totalSlides = sliderInfo.slides.length;
+                let currentSlide = 0;
+                let autoplayTimer = null;
+                let isTransitioning = false;
+                
+                const getEl = (suffix) => document.getElementById(baseId + '_' + suffix);
+                
+                const updateSlides = (slideIndex, direction = 'forward') => {{
+                  if (isTransitioning) return;
+                  isTransitioning = true;
+                  
+                  const transition = sliderInfo.transition || 'fade';
+                  const duration = sliderInfo.transitionDuration || 0.5;
+                  
+                  const getExitTransform = (isForward) => {{
+                    switch(transition) {{
+                      case 'slideLeft': return isForward ? 'translateX(-100%)' : 'translateX(100%)';
+                      case 'slideRight': return isForward ? 'translateX(100%)' : 'translateX(-100%)';
+                      case 'zoom': return 'scale(0.8)';
+                      case 'flip': return 'perspective(1000px) rotateY(90deg)';
+                      default: return 'none';
+                    }}
+                  }};
+                  
+                  const getEntryTransform = (isForward) => {{
+                    switch(transition) {{
+                      case 'slideLeft': return isForward ? 'translateX(100%)' : 'translateX(-100%)';
+                      case 'slideRight': return isForward ? 'translateX(-100%)' : 'translateX(100%)';
+                      case 'zoom': return 'scale(0.8)';
+                      case 'flip': return 'perspective(1000px) rotateY(-90deg)';
+                      default: return 'none';
+                    }}
+                  }};
+                  
+                  const isForward = direction === 'forward';
+                  
+                  for (let i = 0; i < totalSlides; i++) {{
+                    const img = getEl('slide' + (i + 1) + '_img');
+                    const text = getEl('slide' + (i + 1) + '_text');
+                    
+                    if (i === slideIndex) {{
+                      if (img) {{
+                        img.style.transition = 'none';
+                        img.style.opacity = '1';
+                        img.style.transform = getEntryTransform(isForward);
+                        img.style.zIndex = '2';
+                        img.offsetHeight;
+                        img.style.transition = 'all ' + duration + 's ease-in-out';
+                        img.style.transform = 'translateX(0) scale(1) rotateY(0deg)';
+                      }}
+                      if (text) {{
+                        text.style.transition = 'opacity ' + duration + 's ease-in-out';
+                        text.style.opacity = '1';
+                      }}
+                    }} else if (i === currentSlide) {{
+                      if (img) {{
+                        img.style.transition = 'all ' + duration + 's ease-in-out';
+                        img.style.opacity = '0';
+                        img.style.transform = getExitTransform(isForward);
+                        img.style.zIndex = '1';
+                      }}
+                      if (text) {{
+                        text.style.transition = 'opacity ' + duration + 's ease-in-out';
+                        text.style.opacity = '0';
+                      }}
+                    }} else {{
+                      if (img) {{
+                        img.style.transition = 'none';
+                        img.style.opacity = '0';
+                        img.style.transform = 'none';
+                        img.style.zIndex = '0';
+                      }}
+                      if (text) {{
+                        text.style.transition = 'none';
+                        text.style.opacity = '0';
+                      }}
+                    }}
+                  }}
+                  
+                  for (let i = 0; i < totalSlides; i++) {{
+                    const dot = getEl('dot' + (i + 1));
+                    if (dot) {{
+                      dot.style.transition = 'all ' + duration + 's ease-in-out';
+                      dot.style.backgroundColor = i === slideIndex ? '#6366f1' : 'rgba(255,255,255,0.4)';
+                      dot.style.transform = i === slideIndex ? 'scale(1.3)' : 'scale(1)';
+                      dot.style.boxShadow = i === slideIndex ? '0 0 10px rgba(99,102,241,0.8)' : 'none';
+                    }}
+                  }}
+                  
+                  currentSlide = slideIndex;
+                  setTimeout(() => {{ isTransitioning = false; }}, duration * 1000);
+                }};
+                
+                const leftArrow = getEl('arrow_left');
+                const rightArrow = getEl('arrow_right');
+                
+                window.sliderControllers[baseId] = {{
+                  next: () => {{
+                    if (totalSlides <= 1) return;
+                    const newSlide = currentSlide === totalSlides - 1 ? 0 : currentSlide + 1;
+                    updateSlides(newSlide, 'forward');
+                    resetAutoplay();
+                  }},
+                  prev: () => {{
+                    if (totalSlides <= 1) return;
+                    const newSlide = currentSlide === 0 ? totalSlides - 1 : currentSlide - 1;
+                    updateSlides(newSlide, 'backward');
+                    resetAutoplay();
+                  }}
+                }};
+                
+                if (leftArrow) {{
+                  leftArrow.onclick = (e) => {{
+                    e.stopPropagation();
+                    window.sliderControllers[baseId].prev();
+                  }};
+                }}
+                
+                if (rightArrow) {{
+                  rightArrow.onclick = (e) => {{
+                    e.stopPropagation();
+                    window.sliderControllers[baseId].next();
+                  }};
+                }}
+                
+                for (let i = 0; i < totalSlides; i++) {{
+                  const dot = getEl('dot' + (i + 1));
+                  if (dot) {{
+                    dot.onclick = (e) => {{
+                      e.stopPropagation();
+                      const direction = i > currentSlide ? 'forward' : 'backward';
+                      updateSlides(i, direction);
+                      resetAutoplay();
+                    }};
+                  }}
+                }}
+                
+                const startAutoplay = () => {{
+                  autoplayTimer = setInterval(() => {{
+                    window.sliderControllers[baseId].next();
+                  }}, sliderInfo.autoPlayInterval);
+                  window.sliderControllers[baseId].interval = autoplayTimer;
+                }};
+                
+                const resetAutoplay = () => {{
+                  if (autoplayTimer) {{
+                    clearInterval(autoplayTimer);
+                  }}
+                  startAutoplay();
+                }};
+                
+                const containerEl = getEl('container');
+                if (containerEl) {{
+                  containerEl.onmouseenter = () => {{ if (autoplayTimer) clearInterval(autoplayTimer); }};
+                  containerEl.onmouseleave = () => {{ startAutoplay(); }};
+                }}
+                
+                startAutoplay();
+              }});
+            }};
+            
+            if (document.readyState === 'loading') {{
+              document.addEventListener('DOMContentLoaded', initSliders);
+            }} else {{
+              initSliders();
+            }}
+        )();
 
         function openContactFormModal() {{
             document.getElementById('contact-modal').classList.add('active');

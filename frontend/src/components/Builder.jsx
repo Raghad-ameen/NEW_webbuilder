@@ -1620,6 +1620,149 @@ function Builder() {
               />
             </div>
           `;
+        } else if (el.type === 'image_slider') {
+          const slides = el.content?.slides || [];
+          const showArrows = el.content?.showArrows !== false;
+          const showDots = el.content?.showDots !== false;
+          const sliderHeight = el.content?.height || el.height || 400;
+          const transition = el.content?.transition || 'fade';
+          const transitionDuration = el.content?.transitionDuration || 0.5;
+          const baseId = `slider_${el.id}`;
+          
+          // Stringify and safely escape configuration for HTML attribute
+          const configStr = JSON.stringify({ slides, autoPlayInterval: el.content?.autoPlayInterval || 3000, transition, transitionDuration })
+            .replace(/'/g, "&#39;")
+            .replace(/"/g, "&quot;");
+          
+          innerMarkup = `
+            <div id="${baseId}_container" data-slider-config="${configStr}" style="width: 100%; height: ${sliderHeight}px; position: relative; overflow: hidden; border-radius: inherit;">
+              ${slides.map((slide, idx) => `
+                <div id="${baseId}_slide${idx + 1}_img" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: ${idx === 0 ? 1 : 0}; transition: all ${transitionDuration}s ease-in-out; z-index: ${idx === 0 ? 2 : 1};">
+                  <img src="${slide.image}" alt="${(slide.caption || `Slide ${idx + 1}`).replace(/"/g, '&quot;')}" style="width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; user-select: none;" draggable="false" />
+                </div>
+              `).join('')}
+              
+              ${slides[0]?.caption ? `
+                <div id="${baseId}_slide1_text" style="position: absolute; bottom: 0; left: 0; right: 0; padding: 20px; background: linear-gradient(transparent, rgba(0,0,0,0.7)); color: #fff; font-size: 14px; z-index: 3; opacity: 1; transition: opacity ${transitionDuration}s ease-in-out;">
+                  ${slides[0].caption}
+                </div>
+              ` : ''}
+              
+              ${showArrows && slides.length > 1 ? `
+                <button id="${baseId}_arrow_left" type="button" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.6); backdrop-filter: blur(10px); color: #fff; border: 2px solid rgba(255,255,255,0.2); border-radius: 50%; width: 44px; height: 44px; cursor: pointer; z-index: 10; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">‹</button>
+                <button id="${baseId}_arrow_right" type="button" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.6); backdrop-filter: blur(10px); color: #fff; border: 2px solid rgba(255,255,255,0.2); border-radius: 50%; width: 44px; height: 44px; cursor: pointer; z-index: 10; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">›</button>
+              ` : ''}
+              
+              ${showDots && slides.length > 1 ? `
+                <div style="position: absolute; bottom: ${slides[0]?.caption ? '50px' : '15px'}; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 10; padding: 8px 12px; background: rgba(0,0,0,0.4); backdrop-filter: blur(10px); border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);">
+                  ${slides.map((_, idx) => `
+                    <button id="${baseId}_dot${idx + 1}" type="button" style="width: 10px; height: 10px; border-radius: 50%; border: none; background: ${idx === 0 ? '#6366f1' : 'rgba(255,255,255,0.4)'}; cursor: pointer; transform: ${idx === 0 ? 'scale(1.3)' : 'scale(1)'}; transition: all 0.3s ease; padding: 0; box-shadow: ${idx === 0 ? '0 0 10px rgba(99,102,241,0.8)' : 'none'};"></button>
+                  `).join('')}
+                </div>
+              ` : ''}
+            </div>
+          `;
+        } else if (el.type === 'nav_arrow') {
+          const dir = el.content?.direction || 'next';
+          const navType = el.content?.navType || 'page';
+          const arrowStyle = el.content?.arrowStyle || 'chevron';
+          const arrowForm = el.content?.arrowForm || 'circle';
+          const size = Math.min(parseInt(el.width || 50), parseInt(el.height || 50)) * 0.5;
+          
+          const color = el.styles?.color || '#ffffff';
+          const bgColor = el.styles?.backgroundColor || 'rgba(0,0,0,0.5)';
+          
+          let formBorderRadius = '50%';
+          let formBg = bgColor;
+          let formBorder = 'none';
+          let formBackdrop = 'none';
+          let formShadow = 'none';
+          
+          if (arrowForm === 'square') {
+            formBorderRadius = '0px';
+          } else if (arrowForm === 'rounded') {
+            formBorderRadius = '8px';
+          } else if (arrowForm === 'glassmorphism') {
+            formBorderRadius = '50%';
+            formBg = 'rgba(255, 255, 255, 0.15)';
+            formBackdrop = 'blur(10px)';
+            formBorder = '1px solid rgba(255, 255, 255, 0.25)';
+            formShadow = '0 8px 32px 0 rgba(0, 0, 0, 0.2)';
+          } else if (arrowForm === 'outline') {
+            formBorderRadius = '50%';
+            formBg = 'transparent';
+            formBorder = `2px solid ${color}`;
+          } else if (arrowForm === 'minimal') {
+            formBorderRadius = '0px';
+            formBg = 'transparent';
+            formBorder = 'none';
+          }
+          
+          const isNext = dir === 'next';
+          let svgContent = '';
+          if (arrowStyle === 'arrow') {
+            svgContent = isNext 
+              ? `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>`
+              : `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>`;
+          } else if (arrowStyle === 'long-arrow') {
+            svgContent = isNext
+              ? `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="12" x2="20" y2="12" /><polyline points="14 6 20 12 14 18" /></svg>`
+              : `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="12" x2="4" y2="12" /><polyline points="10 6 4 12 10 18" /></svg>`;
+          } else if (arrowStyle === 'triangle') {
+            const rot = isNext ? '90deg' : '-90deg';
+            svgContent = `<svg width="${size * 0.8}" height="${size * 0.8}" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(${rot}); transform-origin: center;"><path d="M3 20h18L12 4z"/></svg>`;
+          } else if (arrowStyle === 'double-chevron') {
+            svgContent = isNext
+              ? `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7" /><polyline points="6 17 11 12 6 7" /></svg>`
+              : `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7" /><polyline points="18 17 13 12 18 7" /></svg>`;
+          } else { // chevron
+            svgContent = isNext
+              ? `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`
+              : `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>`;
+          }
+
+          let updatedStyles = elStyles;
+          updatedStyles += `border-radius: ${formBorderRadius} !important; `;
+          updatedStyles += `background-color: ${formBg} !important; `;
+          if (formBorder !== 'none') updatedStyles += `border: ${formBorder} !important; `;
+          if (formBackdrop !== 'none') updatedStyles += `backdrop-filter: ${formBackdrop} !important; -webkit-backdrop-filter: ${formBackdrop} !important; `;
+          if (formShadow !== 'none') updatedStyles += `box-shadow: ${formShadow} !important; `;
+          
+          let clickHandler = '';
+          if (navType === 'slider') {
+            const targetId = el.content?.targetSliderId;
+            clickHandler = `
+              if (window.sliderControllers) {
+                const controllers = window.sliderControllers;
+                const targetId = '${targetId || ''}';
+                if (targetId && controllers['slider_' + targetId]) {
+                  controllers['slider_' + targetId]['${dir === 'next' ? 'next' : 'prev'}']();
+                } else {
+                  const firstKey = Object.keys(controllers)[0];
+                  if (firstKey) controllers[firstKey]['${dir === 'next' ? 'next' : 'prev'}']();
+                }
+              }
+            `;
+          } else {
+            clickHandler = `
+              window.parent.postMessage({type: 'SWITCH_PAGE_DIR', direction: '${dir}'}, '*');
+            `;
+          }
+
+          updatedStyles += `transition: all 0.2s ease; cursor: pointer; display: flex; align-items: center; justify-content: center; `;
+
+          innerMarkup = `
+            <div 
+              style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"
+              onclick="event.stopPropagation(); ${clickHandler.replace(/\s+/g, ' ')}"
+              onmouseenter="this.style.transform = 'scale(1.1)'; this.style.opacity = '0.9';"
+              onmouseleave="this.style.transform = 'scale(1)'; this.style.opacity = '1';"
+            >
+              ${svgContent}
+            </div>
+          `;
+          
+          elStyles = updatedStyles;
         }
 
         let wrapStart = '';
@@ -1826,6 +1969,196 @@ function Builder() {
               else el.classList.add('search-dimmed');
             });
           };
+
+          // Media Slider Interaction Logic (Supports Multiple Sliders & 0-indexed loop)
+          (function() {
+            window.sliderControllers = window.sliderControllers || {};
+            
+            const initSliders = () => {
+              const containers = document.querySelectorAll('[id$="_container"][data-slider-config]');
+              containers.forEach(container => {
+                const baseId = container.id.replace('_container', '');
+                
+                if (window.sliderControllers[baseId] && window.sliderControllers[baseId].interval) {
+                  clearInterval(window.sliderControllers[baseId].interval);
+                }
+
+                let sliderInfo;
+                try {
+                  const rawConfig = container.getAttribute('data-slider-config');
+                  sliderInfo = JSON.parse(rawConfig);
+                } catch (e) {
+                  console.error("Failed to parse slider config", e);
+                  return;
+                }
+                
+                const totalSlides = sliderInfo.slides.length;
+                let currentSlide = 0;
+                let autoplayTimer = null;
+                let isTransitioning = false;
+                
+                const getEl = (suffix) => document.getElementById(baseId + '_' + suffix);
+                
+                const updateSlides = (slideIndex, direction = 'forward') => {
+                  if (isTransitioning) return;
+                  isTransitioning = true;
+                  
+                  const transition = sliderInfo.transition || 'fade';
+                  const duration = sliderInfo.transitionDuration || 0.5;
+                  
+                  const getExitTransform = (isForward) => {
+                    switch(transition) {
+                      case 'slideLeft': return isForward ? 'translateX(-100%)' : 'translateX(100%)';
+                      case 'slideRight': return isForward ? 'translateX(100%)' : 'translateX(-100%)';
+                      case 'zoom': return 'scale(0.8)';
+                      case 'flip': return 'perspective(1000px) rotateY(90deg)';
+                      default: return 'none';
+                    }
+                  };
+                  
+                  const getEntryTransform = (isForward) => {
+                    switch(transition) {
+                      case 'slideLeft': return isForward ? 'translateX(100%)' : 'translateX(-100%)';
+                      case 'slideRight': return isForward ? 'translateX(-100%)' : 'translateX(100%)';
+                      case 'zoom': return 'scale(0.8)';
+                      case 'flip': return 'perspective(1000px) rotateY(-90deg)';
+                      default: return 'none';
+                    }
+                  };
+                  
+                  const isForward = direction === 'forward';
+                  
+                  for (let i = 0; i < totalSlides; i++) {
+                    const img = getEl('slide' + (i + 1) + '_img');
+                    const text = getEl('slide' + (i + 1) + '_text');
+                    
+                    if (i === slideIndex) {
+                      if (img) {
+                        img.style.transition = 'none';
+                        img.style.opacity = '1';
+                        img.style.transform = getEntryTransform(isForward);
+                        img.style.zIndex = '2';
+                        img.offsetHeight;
+                        img.style.transition = 'all ' + duration + 's ease-in-out';
+                        img.style.transform = 'translateX(0) scale(1) rotateY(0deg)';
+                      }
+                      if (text) {
+                        text.style.transition = 'opacity ' + duration + 's ease-in-out';
+                        text.style.opacity = '1';
+                      }
+                    } else if (i === currentSlide) {
+                      if (img) {
+                        img.style.transition = 'all ' + duration + 's ease-in-out';
+                        img.style.opacity = '0';
+                        img.style.transform = getExitTransform(isForward);
+                        img.style.zIndex = '1';
+                      }
+                      if (text) {
+                        text.style.transition = 'opacity ' + duration + 's ease-in-out';
+                        text.style.opacity = '0';
+                      }
+                    } else {
+                      if (img) {
+                        img.style.transition = 'none';
+                        img.style.opacity = '0';
+                        img.style.transform = 'none';
+                        img.style.zIndex = '0';
+                      }
+                      if (text) {
+                        text.style.transition = 'none';
+                        text.style.opacity = '0';
+                      }
+                    }
+                  }
+                  
+                  for (let i = 0; i < totalSlides; i++) {
+                    const dot = getEl('dot' + (i + 1));
+                    if (dot) {
+                      dot.style.transition = 'all ' + duration + 's ease-in-out';
+                      dot.style.backgroundColor = i === slideIndex ? '#6366f1' : 'rgba(255,255,255,0.4)';
+                      dot.style.transform = i === slideIndex ? 'scale(1.3)' : 'scale(1)';
+                      dot.style.boxShadow = i === slideIndex ? '0 0 10px rgba(99,102,241,0.8)' : 'none';
+                    }
+                  }
+                  
+                  currentSlide = slideIndex;
+                  setTimeout(() => { isTransitioning = false; }, duration * 1000);
+                };
+                
+                const leftArrow = getEl('arrow_left');
+                const rightArrow = getEl('arrow_right');
+                
+                window.sliderControllers[baseId] = {
+                  next: () => {
+                    if (totalSlides <= 1) return;
+                    const newSlide = currentSlide === totalSlides - 1 ? 0 : currentSlide + 1;
+                    updateSlides(newSlide, 'forward');
+                    resetAutoplay();
+                  },
+                  prev: () => {
+                    if (totalSlides <= 1) return;
+                    const newSlide = currentSlide === 0 ? totalSlides - 1 : currentSlide - 1;
+                    updateSlides(newSlide, 'backward');
+                    resetAutoplay();
+                  }
+                };
+                
+                if (leftArrow) {
+                  leftArrow.onclick = (e) => {
+                    e.stopPropagation();
+                    window.sliderControllers[baseId].prev();
+                  };
+                }
+                
+                if (rightArrow) {
+                  rightArrow.onclick = (e) => {
+                    e.stopPropagation();
+                    window.sliderControllers[baseId].next();
+                  };
+                }
+                
+                for (let i = 0; i < totalSlides; i++) {
+                  const dot = getEl('dot' + (i + 1));
+                  if (dot) {
+                    dot.onclick = (e) => {
+                      e.stopPropagation();
+                      const direction = i > currentSlide ? 'forward' : 'backward';
+                      updateSlides(i, direction);
+                      resetAutoplay();
+                    };
+                  }
+                }
+                
+                const startAutoplay = () => {
+                  autoplayTimer = setInterval(() => {
+                    window.sliderControllers[baseId].next();
+                  }, sliderInfo.autoPlayInterval);
+                  window.sliderControllers[baseId].interval = autoplayTimer;
+                };
+                
+                const resetAutoplay = () => {
+                  if (autoplayTimer) {
+                    clearInterval(autoplayTimer);
+                  }
+                  startAutoplay();
+                };
+                
+                const containerEl = getEl('container');
+                if (containerEl) {
+                  containerEl.onmouseenter = () => { if (autoplayTimer) clearInterval(autoplayTimer); };
+                  containerEl.onmouseleave = () => { startAutoplay(); };
+                }
+                
+                startAutoplay();
+              });
+            };
+            
+            if (document.readyState === 'loading') {
+              document.addEventListener('DOMContentLoaded', initSliders);
+            } else {
+              initSliders();
+            }
+          })();
         </script>
       </body>
       </html>
