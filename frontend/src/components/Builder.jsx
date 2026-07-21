@@ -2320,46 +2320,56 @@ function Builder() {
 
     // Sync global elements across all other pages
     if (globalIdsToSync.length > 0) {
-      setPages(prevPages => prevPages.map(page => {
-        if (page.id === activePage.id) return page; // already handled
-        let pageChanged = false;
+      setPages(prevPages => {
+        const nextPages = [...prevPages];
         
-        const newPageLayout = (page.layout || []).map(sec => ({
-          ...sec,
-          elements: (sec.elements || []).map(el => {
-            if (globalIdsToSync.includes(el.id)) {
+        nextPages.forEach((page, index) => {
+          if (page.id === activePage.id) return;
+          let pageChanged = false;
+          
+          const newPageLayout = (page.layout || []).map(sec => ({
+            ...sec,
+            elements: (sec.elements || []).map(el => {
+              if (globalIdsToSync.includes(el.id)) {
+                 pageChanged = true;
+                 return { ...updatedElementData[el.id] };
+              }
+              return el;
+            })
+          }));
+          
+          // Ensure the global element gets added to the page if it wasn't there
+          globalIdsToSync.forEach(gid => {
+             let found = false;
+             for (const sec of newPageLayout) {
+               if (sec.elements && sec.elements.some(e => e.id === gid)) {
+                 found = true;
+                 break;
+               }
+             }
+             
+             if (!found) {
+               if (newPageLayout.length === 0) {
+                  newPageLayout.push({
+                     id: 'sec-auto-' + Date.now() + '-' + Math.random(),
+                     settings: { backgroundColor: 'transparent', containerWidth: '1200px' },
+                     elements: []
+                  });
+               }
+               newPageLayout[0].elements.push({ ...updatedElementData[gid] });
                pageChanged = true;
-               return { ...updatedElementData[el.id] };
-            }
-            return el;
-          })
-        }));
-        
-        // Ensure the global element gets added to the page if it wasn't there
-        globalIdsToSync.forEach(gid => {
-           let found = false;
-           for (const sec of newPageLayout) {
-             if (sec.elements && sec.elements.some(e => e.id === gid)) {
-               found = true;
-               break;
              }
-           }
-           
-           if (!found) {
-             if (newPageLayout.length === 0) {
-                newPageLayout.push({
-                   id: 'sec-auto-' + Date.now() + '-' + Math.random(),
-                   settings: { backgroundColor: 'transparent', containerWidth: '1200px' },
-                   elements: []
-                });
-             }
-             newPageLayout[0].elements.push({ ...updatedElementData[gid] });
-             pageChanged = true;
-           }
+          });
+
+          if (pageChanged) {
+            nextPages[index] = { ...page, layout: newPageLayout };
+            // Auto-save the synced page layout so it persists immediately
+            setTimeout(() => savePageLayout(newPageLayout, nextPages[index]), 0);
+          }
         });
 
-        return pageChanged ? { ...page, layout: newPageLayout } : page;
-      }));
+        return nextPages;
+      });
     }
   };
 
@@ -2985,6 +2995,34 @@ function Builder() {
     e.preventDefault();
     if (!newPageTitle || !newPageSlug) return;
     
+    // Collect all global elements from existing pages
+    const globalElements = [];
+    const globalElementIds = new Set();
+
+    pages.forEach(page => {
+      if (page.layout) {
+        page.layout.forEach(sec => {
+          if (sec.elements) {
+            sec.elements.forEach(el => {
+              if (el.isGlobal && !globalElementIds.has(el.id)) {
+                globalElements.push({ ...el });
+                globalElementIds.add(el.id);
+              }
+            });
+          }
+        });
+      }
+    });
+
+    const defaultElement = {
+      id: `el_init_${Date.now()}`,
+      type: 'heading',
+      content: { tag: 'h2', text: `Welcome to ${newPageTitle}` },
+      styles: { fontSize: '32', color: site?.theme?.textColor || '#333333', marginBottom: '15' }
+    };
+
+    const initialElements = [defaultElement, ...globalElements];
+
     try {
       const token = localStorage.getItem('access_token'); 
       const res = await fetch('http://127.0.0.1:8000/api/pages/', {
@@ -3008,12 +3046,7 @@ function Builder() {
                 useGlobalBackground: true,
                 minHeight: '600px'
               },
-              elements: [{
-                id: `el_init_${Date.now()}`,
-                type: 'heading',
-                content: { tag: 'h2', text: `Welcome to ${newPageTitle}` },
-                styles: { fontSize: '32', color: site?.theme?.textColor || '#333333', marginBottom: '15' }
-              }]
+              elements: initialElements
             }
           ]
         })
