@@ -126,7 +126,11 @@ def render_compiled_element(el, site_id):
     ]
     
     if styles:
-        custom_styles = camel_to_kebab(styles)
+        styles_copy = dict(styles)
+        if el_type == 'shape':
+            styles_copy.pop('backgroundColor', None)
+            styles_copy.pop('boxShadow', None)
+        custom_styles = camel_to_kebab(styles_copy)
         if custom_styles:
             el_styles_list.append(custom_styles)
             
@@ -193,7 +197,36 @@ def render_compiled_element(el, site_id):
         inner_markup = '<div style="height: 100%;"></div>'
         
     elif el_type == 'shape':
-        inner_markup = '<div style="width: 100%; height: 100%; border-radius: inherit; background: inherit;"></div>'
+        shape_type = content.get('shapeType', 'rectangle')
+        fill_type = content.get('fillType', 'filled')
+        stroke_width = content.get('borderWidth', 4)
+        bg_color = styles.get('backgroundColor', '#6366f1')
+        is_border = fill_type == 'border'
+        fill = 'transparent' if is_border else bg_color
+        stroke = bg_color if is_border else 'none'
+        sw = stroke_width if is_border else 0
+        box_shadow = styles.get('boxShadow', '')
+        filter_str = f'filter: drop-shadow({box_shadow});' if box_shadow else ''
+        
+        path_str = ''
+        if shape_type == 'circle':
+            path_str = f'<ellipse cx="50" cy="50" rx="50" ry="50" fill="{fill}" stroke="{stroke}" stroke-width="{sw}" vector-effect="non-scaling-stroke" />'
+        elif shape_type == 'triangle':
+            path_str = f'<polygon points="50,0 100,100 0,100" fill="{fill}" stroke="{stroke}" stroke-width="{sw}" vector-effect="non-scaling-stroke" />'
+        elif shape_type == 'pentagon':
+            path_str = f'<polygon points="50,0 100,38 82,100 18,100 0,38" fill="{fill}" stroke="{stroke}" stroke-width="{sw}" vector-effect="non-scaling-stroke" />'
+        elif shape_type == 'hexagon':
+            path_str = f'<polygon points="25,0 75,0 100,50 75,100 25,100 0,50" fill="{fill}" stroke="{stroke}" stroke-width="{sw}" vector-effect="non-scaling-stroke" />'
+        elif shape_type == 'octagon':
+            path_str = f'<polygon points="30,0 70,0 100,30 100,70 70,100 30,100 0,70 0,30" fill="{fill}" stroke="{stroke}" stroke-width="{sw}" vector-effect="non-scaling-stroke" />'
+        elif shape_type == 'star':
+            path_str = f'<polygon points="50,0 61,35 98,35 68,57 79,91 50,70 21,91 32,57 2,35 39,35" fill="{fill}" stroke="{stroke}" stroke-width="{sw}" vector-effect="non-scaling-stroke" />'
+        elif shape_type == 'diamond':
+            path_str = f'<polygon points="50,0 100,50 50,100 0,50" fill="{fill}" stroke="{stroke}" stroke-width="{sw}" vector-effect="non-scaling-stroke" />'
+        else:
+            path_str = f'<rect x="0" y="0" width="100" height="100" fill="{fill}" stroke="{stroke}" stroke-width="{sw}" vector-effect="non-scaling-stroke" />'
+            
+        inner_markup = f'<div style="width: 100%; height: 100%;"><svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="overflow: visible; {filter_str}">{path_str}</svg></div>'
         
     elif el_type == 'image_slider':
         slides = content.get('slides', [])

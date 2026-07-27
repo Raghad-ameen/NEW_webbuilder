@@ -766,7 +766,7 @@ function Builder() {
         } else {
           if (el.dataset.aosName && el.dataset.aosName !== 'none') {
             el.style.animationName = 'none';
-            if (['fadeIn', 'slideUp', 'slideDown', 'zoomIn'].includes(el.dataset.aosName)) {
+            if (['fadeIn','fadeInUp','fadeInDown','fadeInLeft','fadeInRight','slideUp','slideDown','slideLeft','slideRight','zoomIn','zoomInUp','zoomInDown','flipInX','flipInY','rotateIn','rollIn','lightSpeedIn','jackInTheBox','expandIn','dropIn'].includes(el.dataset.aosName)) {
               el.style.opacity = '0';
             }
           }
@@ -1248,13 +1248,49 @@ function Builder() {
     } catch (e) {}
 
     const animationKeyframes = `
+      /* === Entrance Animations === */
       @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes fadeInUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes fadeInDown { from { opacity: 0; transform: translateY(-40px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes fadeInLeft { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
+      @keyframes fadeInRight { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
       @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
       @keyframes slideDown { from { transform: translateY(-30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-      @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-15px); } }
+      @keyframes slideLeft { from { transform: translateX(-60px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+      @keyframes slideRight { from { transform: translateX(60px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+      @keyframes zoomIn { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+      @keyframes zoomInUp { from { transform: scale(0.5) translateY(40px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+      @keyframes zoomInDown { from { transform: scale(0.5) translateY(-40px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+      @keyframes flipInX { from { transform: perspective(400px) rotateX(90deg); opacity: 0; } to { transform: perspective(400px) rotateX(0deg); opacity: 1; } }
+      @keyframes flipInY { from { transform: perspective(400px) rotateY(90deg); opacity: 0; } to { transform: perspective(400px) rotateY(0deg); opacity: 1; } }
+      @keyframes rotateIn { from { transform: rotate(-200deg); opacity: 0; } to { transform: rotate(0deg); opacity: 1; } }
+      @keyframes rollIn { from { transform: translateX(-100%) rotate(-120deg); opacity: 0; } to { transform: translateX(0) rotate(0deg); opacity: 1; } }
+      @keyframes lightSpeedIn { from { transform: translateX(100%) skewX(-30deg); opacity: 0; } 60% { transform: skewX(20deg); opacity: 1; } 80% { transform: skewX(-5deg); } to { transform: none; opacity: 1; } }
+      @keyframes jackInTheBox { from { opacity: 0; transform: scale(0.1) rotate(30deg); transform-origin: center bottom; } 50% { transform: rotate(-10deg); } 70% { transform: rotate(3deg); } to { opacity: 1; transform: scale(1); } }
+      @keyframes expandIn { from { transform: scaleX(0); opacity: 0; transform-origin: left; } to { transform: scaleX(1); opacity: 1; transform-origin: left; } }
+      @keyframes dropIn { from { transform: translateY(-300px); opacity: 0; } 60% { transform: translateY(15px); opacity: 1; } 80% { transform: translateY(-5px); } to { transform: translateY(0); } }
+      /* === Attention / Looping Animations === */
+      @keyframes bounce { 0%, 20%, 50%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-20px); } 60% { transform: translateY(-10px); } }
+      @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      @keyframes zoomIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-      @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+      @keyframes shake { 0%, 100% { transform: translateX(0); } 10%, 30%, 50%, 70%, 90% { transform: translateX(-6px); } 20%, 40%, 60%, 80% { transform: translateX(6px); } }
+      @keyframes wobble { 0% { transform: translateX(0%); } 15% { transform: translateX(-15%) rotate(-5deg); } 30% { transform: translateX(10%) rotate(3deg); } 45% { transform: translateX(-10%) rotate(-3deg); } 60% { transform: translateX(5%) rotate(2deg); } 75% { transform: translateX(-3%) rotate(-1deg); } 100% { transform: translateX(0%); } }
+      @keyframes rubberBand { 0% { transform: scale3d(1,1,1); } 30% { transform: scale3d(1.25,0.75,1); } 40% { transform: scale3d(0.75,1.25,1); } 50% { transform: scale3d(1.15,0.85,1); } 65% { transform: scale3d(0.95,1.05,1); } 75% { transform: scale3d(1.05,0.95,1); } 100% { transform: scale3d(1,1,1); } }
+      @keyframes tada { 0% { transform: scale3d(1,1,1); } 10%, 20% { transform: scale3d(0.9,0.9,0.9) rotate(-3deg); } 30%, 50%, 70%, 90% { transform: scale3d(1.1,1.1,1.1) rotate(3deg); } 40%, 60%, 80% { transform: scale3d(1.1,1.1,1.1) rotate(-3deg); } 100% { transform: scale3d(1,1,1); } }
+      @keyframes heartbeat { 0% { transform: scale(1); } 14% { transform: scale(1.15); } 28% { transform: scale(1); } 42% { transform: scale(1.15); } 70% { transform: scale(1); } 100% { transform: scale(1); } }
+      @keyframes jello { 0%, 11.1%, 100% { transform: none; } 22.2% { transform: skewX(-12.5deg) skewY(-12.5deg); } 33.3% { transform: skewX(6.25deg) skewY(6.25deg); } 44.4% { transform: skewX(-3.125deg) skewY(-3.125deg); } 55.5% { transform: skewX(1.5625deg) skewY(1.5625deg); } 66.6% { transform: skewX(-0.78125deg) skewY(-0.78125deg); } 77.7% { transform: skewX(0.390625deg) skewY(0.390625deg); } 88.8% { transform: skewX(-0.1953125deg) skewY(-0.1953125deg); } }
+      @keyframes flash { 0%, 50%, 100% { opacity: 1; } 25%, 75% { opacity: 0; } }
+      @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+      @keyframes swing { 20% { transform: rotate(15deg); } 40% { transform: rotate(-10deg); } 60% { transform: rotate(5deg); } 80% { transform: rotate(-5deg); } 100% { transform: rotate(0deg); } }
+      @keyframes glitch { 0%, 100% { transform: translate(0); } 20% { transform: translate(-3px, 3px); } 40% { transform: translate(-3px, -3px); } 60% { transform: translate(3px, 3px); } 80% { transform: translate(3px, -3px); } }
+      @keyframes breathe { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.04); opacity: 0.85; } }
+      /* === Exit Animations === */
+      @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+      @keyframes fadeOutUp { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-40px); } }
+      @keyframes fadeOutDown { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(40px); } }
+      @keyframes zoomOut { from { transform: scale(1); opacity: 1; } to { transform: scale(0.5); opacity: 0; } }
+      @keyframes slideOutLeft { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-60px); opacity: 0; } }
+      @keyframes slideOutRight { from { transform: translateX(0); opacity: 1; } to { transform: translateX(60px); opacity: 0; } }
     `;
 
     // Generate Hover Styles CSS
@@ -1330,6 +1366,7 @@ function Builder() {
         position: relative;
         width: 100%;
         background-color: transparent !important;
+        min-height: 200px;
       }
 
       .section-container {
@@ -1339,6 +1376,7 @@ function Builder() {
         padding: 0 ${containerPadding};
         position: relative;
         box-sizing: border-box;
+        min-height: 200px;
       }
 
       .element-wrapper {
@@ -1481,6 +1519,7 @@ function Builder() {
         
         if (el.styles) {
           Object.keys(el.styles).forEach(k => {
+            if (el.type === 'shape' && (k === 'backgroundColor' || k === 'boxShadow')) return;
             let val = el.styles[k];
             if (['fontSize', 'padding', 'margin', 'borderRadius', 'borderWidth', 'marginBottom', 'height', 'width'].includes(k) && !isNaN(val) && val !== '') val = `${val}px`;
             elStyles += `${k.replace(/([A-Z])/g, '-$1').toLowerCase()}: ${val}; `;
@@ -1490,7 +1529,7 @@ function Builder() {
         let aosAttrs = '';
         if (el.animation && el.animation.type && el.animation.type !== 'none') {
           aosAttrs = ` data-aos-name="${el.animation.type}" data-aos-duration="${el.animation.duration || 1}s" data-aos-delay="${el.animation.delay || 0}s" data-aos-iteration="${el.animation.iteration || '1'}" `;
-          if (['fadeIn', 'slideUp', 'slideDown', 'zoomIn'].includes(el.animation.type)) {
+          if (['fadeIn','fadeInUp','fadeInDown','fadeInLeft','fadeInRight','slideUp','slideDown','slideLeft','slideRight','zoomIn','zoomInUp','zoomInDown','flipInX','flipInY','rotateIn','rollIn','lightSpeedIn','jackInTheBox','expandIn','dropIn'].includes(el.animation.type)) {
             elStyles += `opacity: 0; `;
           }
         }
@@ -1578,7 +1617,7 @@ function Builder() {
           const fillType = el.content?.fillType || 'filled';
           const strokeWidth = el.content?.borderWidth || 4;
           
-          const bgColor = el.styles?.backgroundColor || '#6366f1';
+          const bgColor = el.styles?.backgroundColor || el.styles?.color || '#6366f1';
           const isBorder = fillType === 'border';
           const fill = isBorder ? 'transparent' : bgColor;
           const stroke = isBorder ? bgColor : 'none';
@@ -1595,9 +1634,7 @@ function Builder() {
           else if (shapeType === 'diamond') pathStr = `<polygon points="50,0 100,50 50,100 0,50" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke" />`;
           else pathStr = `<rect x="0" y="0" width="100" height="100" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke" />`;
 
-          // Clear backgroundColor and boxShadow from styles string as they are handled by SVG
-          el.styles.backgroundColor = 'transparent';
-          el.styles.boxShadow = 'none';
+
 
           innerMarkup = `
             <div style="width: 100%; height: 100%;">
@@ -1932,7 +1969,7 @@ function Builder() {
                 } else {
                   if (el.dataset.aosName && el.dataset.aosName !== 'none') {
                     el.style.animationName = 'none';
-                    if (['fadeIn', 'slideUp', 'slideDown', 'zoomIn'].includes(el.dataset.aosName)) {
+                    if (['fadeIn','fadeInUp','fadeInDown','fadeInLeft','fadeInRight','slideUp','slideDown','slideLeft','slideRight','zoomIn','zoomInUp','zoomInDown','flipInX','flipInY','rotateIn','rollIn','lightSpeedIn','jackInTheBox','expandIn','dropIn'].includes(el.dataset.aosName)) {
                       el.style.opacity = '0';
                     }
                   }
@@ -1944,30 +1981,48 @@ function Builder() {
 
           window.runSiteSearch = function(query) {
             const q = query.toLowerCase().trim();
+            if (!q) return;
+
             const elements = document.querySelectorAll('.searchable-site-element');
-            elements.forEach(el => {
+            let firstMatch = null;
+
+            for (let el of elements) {
               if (el.querySelector('input[oninput*="runSiteSearch"]')) {
-                el.classList.remove('search-dimmed');
-                return;
+                continue;
               }
 
-              if (!q) {
-                el.classList.remove('search-dimmed');
-                return;
-              }
-              
               let isMatch = false;
-              if (el.innerText.toLowerCase().includes(q)) isMatch = true;
-              
+              if (el.innerText && el.innerText.toLowerCase().includes(q)) isMatch = true;
+
               const img = el.querySelector('img');
-              if (img && img.alt.toLowerCase().includes(q)) isMatch = true;
+              if (img && img.alt && img.alt.toLowerCase().includes(q)) isMatch = true;
 
               const input = el.querySelector('input, textarea');
-              if (input && (input.placeholder.toLowerCase().includes(q) || input.value.toLowerCase().includes(q))) isMatch = true;
+              if (input) {
+                const placeholder = input.getAttribute('placeholder') || '';
+                const val = input.value || '';
+                if (placeholder.toLowerCase().includes(q) || val.toLowerCase().includes(q)) {
+                  isMatch = true;
+                }
+              }
 
-              if (isMatch) el.classList.remove('search-dimmed');
-              else el.classList.add('search-dimmed');
-            });
+              if (isMatch) {
+                firstMatch = el;
+                break;
+              }
+            }
+
+            if (firstMatch) {
+              firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+              firstMatch.style.outline = '4px solid #818cf8';
+              firstMatch.style.boxShadow = '0 0 20px rgba(99,102,241,0.6)';
+              firstMatch.style.transition = 'outline 0.3s, box-shadow 0.3s';
+              setTimeout(() => {
+                firstMatch.style.outline = '';
+                firstMatch.style.boxShadow = '';
+              }, 1500);
+            }
           };
 
           // Media Slider Interaction Logic (Supports Multiple Sliders & 0-indexed loop)
@@ -2192,6 +2247,111 @@ function Builder() {
     }
   };
 
+  // Synchronizes global elements across all pages in the project, preserving section index & exact positions
+  const syncGlobalElementsAcrossPages = (sourceLayout, sourcePageId, allPages) => {
+    if (!sourceLayout || !sourcePageId || !allPages) return allPages;
+
+    const globalMap = new Map();
+    (sourceLayout || []).forEach((sec, secIdx) => {
+      (sec.elements || []).forEach(el => {
+        if (el.isGlobal) {
+          globalMap.set(el.id, {
+            element: JSON.parse(JSON.stringify(el)),
+            secIdx: secIdx
+          });
+        }
+      });
+    });
+
+    if (globalMap.size === 0) return allPages;
+
+    let anyPageChanged = false;
+    const nextPages = allPages.map(page => {
+      if (page.id === sourcePageId) return page;
+
+      let pageLayout = JSON.parse(JSON.stringify(page.layout || []));
+      let pageModified = false;
+
+      const existingGids = new Set();
+      pageLayout.forEach(sec => {
+        (sec.elements || []).forEach(el => {
+          if (el.isGlobal) existingGids.add(el.id);
+        });
+      });
+
+      // Update existing global elements on target page so position, size & properties match 100%
+      pageLayout = pageLayout.map(sec => ({
+        ...sec,
+        elements: (sec.elements || []).map(el => {
+          if (el.isGlobal && globalMap.has(el.id)) {
+            pageModified = true;
+            const sourceInfo = globalMap.get(el.id);
+            return {
+              ...sourceInfo.element
+            };
+          }
+          return el;
+        })
+      }));
+
+      // Insert any missing global elements into matching section index with exact coordinates
+      globalMap.forEach((info, gid) => {
+        if (!existingGids.has(gid)) {
+          pageModified = true;
+          if (pageLayout.length === 0) {
+            pageLayout.push({
+              id: 'sec_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+              settings: { backgroundColor: 'transparent', containerWidth: '1200px' },
+              elements: []
+            });
+          }
+
+          const targetSecIdx = Math.min(info.secIdx, pageLayout.length - 1);
+          const targetSec = pageLayout[targetSecIdx] || pageLayout[0];
+          targetSec.elements = targetSec.elements || [];
+          targetSec.elements.push({ ...info.element });
+        }
+      });
+
+      if (pageModified) {
+        anyPageChanged = true;
+        savePageLayout(pageLayout, page);
+        return { ...page, layout: pageLayout };
+      }
+      return page;
+    });
+
+    return nextPages;
+  };
+
+  // ── Remove specific global elements from ALL other pages ────────────────────
+  // Called when a global element is deleted or un-globalised on the current page.
+  // This ensures the element is gone everywhere, not just the active page.
+  const removeGlobalElementsFromOtherPages = (elementIdsToRemove) => {
+    if (!elementIdsToRemove || elementIdsToRemove.length === 0) return;
+    const idsSet = new Set(elementIdsToRemove);
+
+    setPages(prevPages => {
+      return prevPages.map(page => {
+        if (page.id === activePage?.id) return page; // current page handled by caller
+
+        let modified = false;
+        const newLayout = (page.layout || []).map(sec => {
+          const origLen = (sec.elements || []).length;
+          const filtered = (sec.elements || []).filter(el => !idsSet.has(el.id));
+          if (filtered.length !== origLen) modified = true;
+          return { ...sec, elements: filtered };
+        });
+
+        if (modified) {
+          savePageLayout(newLayout, page);
+          return { ...page, layout: newLayout };
+        }
+        return page;
+      });
+    });
+  };
+
   const updateLayout = (newLayout, pushToHistory = true) => {
     setActiveLayout(newLayout);
     if (pushToHistory) {
@@ -2201,13 +2361,19 @@ function Builder() {
       setHistoryPointer(newHistory.length - 1);
     }
     
-    // Sync local cache to prevent data loss when switching pages
-    setPages(prevPages => prevPages.map(p => 
-      p.id === activePage?.id ? { ...p, layout: newLayout } : p
-    ));
+    // Sync local cache & active page
     setActivePage(prev => prev ? { ...prev, layout: newLayout } : prev);
-
     savePageLayout(newLayout, activePage);
+
+    // Synchronize all global elements across all pages in the project
+    if (activePage) {
+      setPages(prevPages => {
+        const updatedPages = prevPages.map(p => 
+          p.id === activePage.id ? { ...p, layout: newLayout } : p
+        );
+        return syncGlobalElementsAcrossPages(newLayout, activePage.id, updatedPages);
+      });
+    }
   };
 
   const saveTimeout = useRef({});
@@ -2290,14 +2456,26 @@ function Builder() {
   const selectedElement = getSelectedElement();
 
   const updateSelectedElement = (updates) => {
-    let globalIdsToSync = [];
-    let updatedElementData = {};
+    // When un-globalising (isGlobal toggled OFF), remove the element from every
+    // other page first so it becomes a purely local element on this page only.
+    if (updates.isGlobal === false) {
+      const idsToUnglobalize = [];
+      selectedElementIds.forEach(id => {
+        const found = findElementInLayout(id);
+        if (found?.element?.isGlobal) {
+          idsToUnglobalize.push(id);
+        }
+      });
+      if (idsToUnglobalize.length > 0) {
+        removeGlobalElementsFromOtherPages(idsToUnglobalize);
+      }
+    }
 
     const nextLayout = activeLayout.map(sec => ({
       ...sec,
       elements: (sec.elements || []).map(el => {
         if (selectedElementIds.includes(el.id)) {
-          const updatedEl = {
+          return {
             ...el,
             isGlobal: updates.isGlobal !== undefined ? updates.isGlobal : el.isGlobal,
             content: { ...el.content, ...updates.content },
@@ -2306,71 +2484,12 @@ function Builder() {
             action: { ...el.action, ...updates.action },
             hoverStyles: { ...el.hoverStyles, ...updates.hoverStyles }
           };
-          if (updatedEl.isGlobal) {
-            globalIdsToSync.push(el.id);
-            updatedElementData[el.id] = updatedEl;
-          }
-          return updatedEl;
         }
         return el;
       })
     }));
 
     updateLayout(nextLayout);
-
-    // Sync global elements across all other pages
-    if (globalIdsToSync.length > 0) {
-      setPages(prevPages => {
-        const nextPages = [...prevPages];
-        
-        nextPages.forEach((page, index) => {
-          if (page.id === activePage.id) return;
-          let pageChanged = false;
-          
-          const newPageLayout = (page.layout || []).map(sec => ({
-            ...sec,
-            elements: (sec.elements || []).map(el => {
-              if (globalIdsToSync.includes(el.id)) {
-                 pageChanged = true;
-                 return { ...updatedElementData[el.id] };
-              }
-              return el;
-            })
-          }));
-          
-          // Ensure the global element gets added to the page if it wasn't there
-          globalIdsToSync.forEach(gid => {
-             let found = false;
-             for (const sec of newPageLayout) {
-               if (sec.elements && sec.elements.some(e => e.id === gid)) {
-                 found = true;
-                 break;
-               }
-             }
-             
-             if (!found) {
-               if (newPageLayout.length === 0) {
-                  newPageLayout.push({
-                     id: 'sec-auto-' + Date.now() + '-' + Math.random(),
-                     settings: { backgroundColor: 'transparent', containerWidth: '1200px' },
-                     elements: []
-                  });
-               }
-               newPageLayout[0].elements.push({ ...updatedElementData[gid] });
-               pageChanged = true;
-             }
-          });
-
-          if (pageChanged) {
-            nextPages[index] = { ...page, layout: newPageLayout };
-            // Auto-save the synced page layout so it persists immediately
-            setTimeout(() => savePageLayout(newPageLayout, nextPages[index]), 0);
-          }
-        });
-
-        return nextPages;
-      });
-    }
   };
 
   const renderLabelWithReset = (label, groupName, keyName) => {
@@ -2444,6 +2563,12 @@ function Builder() {
   };
 
   const handleDeleteElement = (elementId) => {
+    // If the element is global, also remove it from every other page
+    const found = findElementInLayout(elementId);
+    if (found?.element?.isGlobal) {
+      removeGlobalElementsFromOtherPages([elementId]);
+    }
+
     const nextLayout = activeLayout.map(sec => ({
       ...sec,
       elements: (sec.elements || []).filter(el => el.id !== elementId)
@@ -2454,6 +2579,19 @@ function Builder() {
 
   const handleDeleteSelected = () => {
     if (selectedElementIds.length === 0) return;
+
+    // Collect any global elements being deleted and remove from all other pages
+    const globalIdsToDelete = [];
+    selectedElementIds.forEach(id => {
+      const found = findElementInLayout(id);
+      if (found?.element?.isGlobal) {
+        globalIdsToDelete.push(id);
+      }
+    });
+    if (globalIdsToDelete.length > 0) {
+      removeGlobalElementsFromOtherPages(globalIdsToDelete);
+    }
+
     const nextLayout = activeLayout.map(sec => ({
       ...sec,
       elements: (sec.elements || []).filter(el => !selectedElementIds.includes(el.id))
@@ -3573,7 +3711,7 @@ function Builder() {
             style={{ 
               width: '100%', 
               height: '100%',
-              opacity: el.animation && ['fadeIn', 'slideUp', 'slideDown', 'zoomIn'].includes(el.animation.type) ? 0 : 1
+              opacity: el.animation && ['fadeIn','fadeInUp','fadeInDown','fadeInLeft','fadeInRight','slideUp','slideDown','slideLeft','slideRight','zoomIn','zoomInUp','zoomInDown','flipInX','flipInY','rotateIn','rollIn','lightSpeedIn','jackInTheBox','expandIn','dropIn'].includes(el.animation.type) ? 0 : 1
             }}
           >
             {getWrappedContent(elementInnerContent)}
@@ -3762,7 +3900,47 @@ function Builder() {
             disabled={!isPreview}
             value={isPreview ? liveSearchQuery : undefined}
             onChange={(e) => {
-              if (isPreview) setLiveSearchQuery(e.target.value);
+              const query = e.target.value;
+              if (isPreview) {
+                setLiveSearchQuery(query);
+                const q = query.toLowerCase().trim();
+                if (q) {
+                  let firstMatch = null;
+                  for (let sec of activeLayout) {
+                    for (let item of (sec.elements || [])) {
+                      if (item.type === 'site_search') continue;
+                      const checks = [
+                        item.type,
+                        item.content?.text,
+                        item.content?.label,
+                        item.content?.alt,
+                        item.content?.placeholder,
+                        item.content?.src,
+                        item.id
+                      ];
+                      if (checks.some(v => v && String(v).toLowerCase().includes(q))) {
+                        firstMatch = item;
+                        break;
+                      }
+                    }
+                    if (firstMatch) break;
+                  }
+
+                  if (firstMatch) {
+                    const domEl = document.querySelector(`[data-element-id="${firstMatch.id}"]`);
+                    if (domEl) {
+                      domEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      domEl.style.outline = '4px solid var(--primary)';
+                      domEl.style.boxShadow = '0 0 20px rgba(99,102,241,0.6)';
+                      domEl.style.transition = 'outline 0.3s, box-shadow 0.3s';
+                      setTimeout(() => {
+                        domEl.style.outline = '';
+                        domEl.style.boxShadow = '';
+                      }, 1500);
+                    }
+                  }
+                }
+              }
             }}
             style={{ 
               padding: '10px 12px 10px 35px', 
@@ -3773,7 +3951,8 @@ function Builder() {
               background: 'transparent', 
               color: 'inherit',
               fontSize: '14px',
-              outline: 'none'
+              outline: 'none',
+              pointerEvents: isPreview ? 'auto' : 'none'
             }} 
           />
         </div>
@@ -3797,7 +3976,9 @@ function Builder() {
               background: 'rgba(255,255,255,0.05)', 
               color: 'inherit',
               width: '100%',
-              fontSize: '14px'
+              fontSize: '14px',
+              outline: 'none',
+              pointerEvents: isPreview ? 'auto' : 'none'
             }} 
           />
         </div>
@@ -3809,7 +3990,7 @@ function Builder() {
       const fillType = el.content?.fillType || 'filled';
       const strokeWidth = el.content?.borderWidth || 4;
       
-      const bgColor = styles.backgroundColor || '#6366f1';
+      const bgColor = styles.backgroundColor || styles.color || el.styles?.backgroundColor || el.styles?.color || '#6366f1';
       const isBorder = fillType === 'border';
       const fill = isBorder ? 'transparent' : bgColor;
       const stroke = isBorder ? bgColor : 'none';
@@ -5221,13 +5402,49 @@ function Builder() {
               <style dangerouslySetInnerHTML={{ __html: site.custom_css }} />
               <style dangerouslySetInnerHTML={{ __html: getHoverStylesCss() }} />
               <style dangerouslySetInnerHTML={{ __html: `
+                /* Entrance */
                 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes fadeInUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+                @keyframes fadeInDown { from { opacity: 0; transform: translateY(-40px); } to { opacity: 1; transform: translateY(0); } }
+                @keyframes fadeInLeft { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
+                @keyframes fadeInRight { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
                 @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
                 @keyframes slideDown { from { transform: translateY(-30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-                @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-15px); } }
+                @keyframes slideLeft { from { transform: translateX(-60px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+                @keyframes slideRight { from { transform: translateX(60px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+                @keyframes zoomIn { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+                @keyframes zoomInUp { from { transform: scale(0.5) translateY(40px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+                @keyframes zoomInDown { from { transform: scale(0.5) translateY(-40px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+                @keyframes flipInX { from { transform: perspective(400px) rotateX(90deg); opacity: 0; } to { transform: perspective(400px) rotateX(0deg); opacity: 1; } }
+                @keyframes flipInY { from { transform: perspective(400px) rotateY(90deg); opacity: 0; } to { transform: perspective(400px) rotateY(0deg); opacity: 1; } }
+                @keyframes rotateIn { from { transform: rotate(-200deg); opacity: 0; } to { transform: rotate(0deg); opacity: 1; } }
+                @keyframes rollIn { from { transform: translateX(-100%) rotate(-120deg); opacity: 0; } to { transform: translateX(0) rotate(0deg); opacity: 1; } }
+                @keyframes lightSpeedIn { from { transform: translateX(100%) skewX(-30deg); opacity: 0; } 60% { transform: skewX(20deg); opacity: 1; } 80% { transform: skewX(-5deg); } to { transform: none; opacity: 1; } }
+                @keyframes jackInTheBox { from { opacity: 0; transform: scale(0.1) rotate(30deg); transform-origin: center bottom; } 50% { transform: rotate(-10deg); } 70% { transform: rotate(3deg); } to { opacity: 1; transform: scale(1); } }
+                @keyframes expandIn { from { transform: scaleX(0); opacity: 0; transform-origin: left; } to { transform: scaleX(1); opacity: 1; transform-origin: left; } }
+                @keyframes dropIn { from { transform: translateY(-300px); opacity: 0; } 60% { transform: translateY(15px); opacity: 1; } 80% { transform: translateY(-5px); } to { transform: translateY(0); } }
+                /* Attention / Looping */
+                @keyframes bounce { 0%, 20%, 50%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-20px); } 60% { transform: translateY(-10px); } }
+                @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
                 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-                @keyframes zoomIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-                @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+                @keyframes shake { 0%, 100% { transform: translateX(0); } 10%, 30%, 50%, 70%, 90% { transform: translateX(-6px); } 20%, 40%, 60%, 80% { transform: translateX(6px); } }
+                @keyframes wobble { 0% { transform: translateX(0%); } 15% { transform: translateX(-15%) rotate(-5deg); } 30% { transform: translateX(10%) rotate(3deg); } 45% { transform: translateX(-10%) rotate(-3deg); } 60% { transform: translateX(5%) rotate(2deg); } 75% { transform: translateX(-3%) rotate(-1deg); } 100% { transform: translateX(0%); } }
+                @keyframes rubberBand { 0% { transform: scale3d(1,1,1); } 30% { transform: scale3d(1.25,0.75,1); } 40% { transform: scale3d(0.75,1.25,1); } 50% { transform: scale3d(1.15,0.85,1); } 65% { transform: scale3d(0.95,1.05,1); } 75% { transform: scale3d(1.05,0.95,1); } 100% { transform: scale3d(1,1,1); } }
+                @keyframes tada { 0% { transform: scale3d(1,1,1); } 10%, 20% { transform: scale3d(0.9,0.9,0.9) rotate(-3deg); } 30%, 50%, 70%, 90% { transform: scale3d(1.1,1.1,1.1) rotate(3deg); } 40%, 60%, 80% { transform: scale3d(1.1,1.1,1.1) rotate(-3deg); } 100% { transform: scale3d(1,1,1); } }
+                @keyframes heartbeat { 0% { transform: scale(1); } 14% { transform: scale(1.15); } 28% { transform: scale(1); } 42% { transform: scale(1.15); } 70% { transform: scale(1); } 100% { transform: scale(1); } }
+                @keyframes jello { 0%, 11.1%, 100% { transform: none; } 22.2% { transform: skewX(-12.5deg) skewY(-12.5deg); } 33.3% { transform: skewX(6.25deg) skewY(6.25deg); } 44.4% { transform: skewX(-3.125deg) skewY(-3.125deg); } 55.5% { transform: skewX(1.5625deg) skewY(1.5625deg); } 66.6% { transform: skewX(-0.78125deg) skewY(-0.78125deg); } 77.7% { transform: skewX(0.390625deg) skewY(0.390625deg); } 88.8% { transform: skewX(-0.1953125deg) skewY(-0.1953125deg); } }
+                @keyframes flash { 0%, 50%, 100% { opacity: 1; } 25%, 75% { opacity: 0; } }
+                @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+                @keyframes swing { 20% { transform: rotate(15deg); } 40% { transform: rotate(-10deg); } 60% { transform: rotate(5deg); } 80% { transform: rotate(-5deg); } 100% { transform: rotate(0deg); } }
+                @keyframes glitch { 0%, 100% { transform: translate(0); } 20% { transform: translate(-3px, 3px); } 40% { transform: translate(-3px, -3px); } 60% { transform: translate(3px, 3px); } 80% { transform: translate(3px, -3px); } }
+                @keyframes breathe { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.04); opacity: 0.85; } }
+                /* Exit */
+                @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+                @keyframes fadeOutUp { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-40px); } }
+                @keyframes fadeOutDown { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(40px); } }
+                @keyframes zoomOut { from { transform: scale(1); opacity: 1; } to { transform: scale(0.5); opacity: 0; } }
+                @keyframes slideOutLeft { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-60px); opacity: 0; } }
+                @keyframes slideOutRight { from { transform: translateX(0); opacity: 1; } to { transform: translateX(60px); opacity: 0; } }
               ` }} />
 
 
@@ -5808,10 +6025,34 @@ function Builder() {
                             style={{ width: '100%', fontSize: '11px', padding: '4px', background: 'rgba(0,0,0,0.3)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px' }}
                           >
                             <option value="fade">Fade</option>
+                            <option value="fadeUp">Fade Up</option>
+                            <option value="fadeDown">Fade Down</option>
+                            <option value="fadeLeft">Fade Left</option>
+                            <option value="fadeRight">Fade Right</option>
                             <option value="slideLeft">Slide Left</option>
                             <option value="slideRight">Slide Right</option>
-                            <option value="zoom">Zoom</option>
+                            <option value="slideUp">Slide Up</option>
+                            <option value="slideDown">Slide Down</option>
+                            <option value="zoomIn">Zoom In</option>
+                            <option value="zoomOut">Zoom Out</option>
                             <option value="flip">Flip</option>
+                            <option value="flipUp">Flip Up</option>
+                            <option value="flipDown">Flip Down</option>
+                            <option value="flipLeft">Flip Left</option>
+                            <option value="flipRight">Flip Right</option>
+                            <option value="rotate">Rotate</option>
+                            <option value="rotateClockwise">Rotate Clockwise</option>
+                            <option value="rotateCounter">Rotate Counter</option>
+                            <option value="bounce">Bounce</option>
+                            <option value="pulse">Pulse</option>
+                            <option value="swing">Swing</option>
+                            <option value="rubberBand">Rubber Band</option>
+                            <option value="hinge">Hinge</option>
+                            <option value="lightSpeedIn">Light Speed In</option>
+                            <option value="lightSpeedOut">Light Speed Out</option>
+                            <option value="jackInTheBox">Jack In The Box</option>
+                            <option value="rollIn">Roll In</option>
+                            <option value="rollOut">Roll Out</option>
                           </select>
                         </div>
 
@@ -5982,6 +6223,18 @@ function Builder() {
                           <option value="filled">Filled</option>
                           <option value="border">Border Only</option>
                         </select>
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        {renderLabelWithReset('Shape Color', 'styles', 'backgroundColor')}
+                        <input
+                          type="color"
+                          value={selectedElement.styles?.backgroundColor || selectedElement.styles?.color || '#6366f1'}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            debouncedColorUpdate('color_shape', () => updateSelectedElement({ styles: { backgroundColor: v, color: v } }));
+                          }}
+                          style={{ height: '35px', width: '100%', padding: '0', border: 'none', cursor: 'pointer', borderRadius: '4px' }}
+                        />
                       </div>
                       {(selectedElement.content?.fillType === 'border') && (
                         <div style={{ marginBottom: '12px' }}>
@@ -6267,13 +6520,13 @@ function Builder() {
                         />
                       </div>
                     )}
-                    {['button', 'form', 'text'].includes(selectedElement.type) && (
+                    {['button', 'form', 'text', 'shape'].includes(selectedElement.type) && (
                       <div>
                         {renderLabelWithReset('Background Color', 'styles', 'backgroundColor')}
                         <input
                           type="color"
                           value={selectedElement.styles?.backgroundColor || '#ffffff'}
-                          onChange={(e) => { const v = e.target.value; debouncedColorUpdate('color_2', () => updateSelectedElement({ styles: { backgroundColor: v } })); }}
+                          onChange={(e) => { const v = e.target.value; debouncedColorUpdate('color_2', () => updateSelectedElement({ styles: { backgroundColor: v, color: v } })); }}
                           style={{ height: '35px', padding: '0', border: 'none', cursor: 'pointer' }}
                         />
                       </div>
@@ -6732,13 +6985,52 @@ function Builder() {
                       onChange={(e) => updateSelectedElement({ animation: { type: e.target.value } })}
                     >
                       <option value="none">None (Static)</option>
-                      <option value="fadeIn">Fade In</option>
-                      <option value="slideUp">Slide Up</option>
-                      <option value="slideDown">Slide Down</option>
-                      <option value="bounce">Bounce</option>
-                      <option value="spin">Spin Loop</option>
-                      <option value="zoomIn">Zoom In</option>
-                      <option value="pulse">Pulse</option>
+                      <optgroup label="── Entrance ──">
+                        <option value="fadeIn">Fade In</option>
+                        <option value="fadeInUp">Fade In Up</option>
+                        <option value="fadeInDown">Fade In Down</option>
+                        <option value="fadeInLeft">Fade In Left</option>
+                        <option value="fadeInRight">Fade In Right</option>
+                        <option value="slideUp">Slide Up</option>
+                        <option value="slideDown">Slide Down</option>
+                        <option value="slideLeft">Slide Left</option>
+                        <option value="slideRight">Slide Right</option>
+                        <option value="zoomIn">Zoom In</option>
+                        <option value="zoomInUp">Zoom In Up</option>
+                        <option value="zoomInDown">Zoom In Down</option>
+                        <option value="flipInX">Flip In X</option>
+                        <option value="flipInY">Flip In Y</option>
+                        <option value="rotateIn">Rotate In</option>
+                        <option value="rollIn">Roll In</option>
+                        <option value="lightSpeedIn">Light Speed In</option>
+                        <option value="jackInTheBox">Jack In The Box</option>
+                        <option value="expandIn">Expand In</option>
+                        <option value="dropIn">Drop In</option>
+                      </optgroup>
+                      <optgroup label="── Attention ──">
+                        <option value="bounce">Bounce</option>
+                        <option value="pulse">Pulse</option>
+                        <option value="spin">Spin Loop</option>
+                        <option value="shake">Shake</option>
+                        <option value="wobble">Wobble</option>
+                        <option value="rubberBand">Rubber Band</option>
+                        <option value="tada">Tada</option>
+                        <option value="heartbeat">Heartbeat</option>
+                        <option value="jello">Jello</option>
+                        <option value="flash">Flash</option>
+                        <option value="float">Float</option>
+                        <option value="swing">Swing</option>
+                        <option value="glitch">Glitch</option>
+                        <option value="breathe">Breathe</option>
+                      </optgroup>
+                      <optgroup label="── Exit ──">
+                        <option value="fadeOut">Fade Out</option>
+                        <option value="fadeOutUp">Fade Out Up</option>
+                        <option value="fadeOutDown">Fade Out Down</option>
+                        <option value="zoomOut">Zoom Out</option>
+                        <option value="slideOutLeft">Slide Out Left</option>
+                        <option value="slideOutRight">Slide Out Right</option>
+                      </optgroup>
                     </select>
                   </div>
 
