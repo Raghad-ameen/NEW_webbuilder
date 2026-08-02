@@ -247,14 +247,11 @@ function Builder() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // ── SEARCH STATE (brain) ──────────────────────────────────────────────────
-  // Derived: Set of matched element IDs (null = no filter)
-  // Recomputes only when activeLayout or searchQuery changes — never in render.
   const matchedElementIds = useMemo(
     () => filterElements(activeLayout, searchQuery),
     [activeLayout, searchQuery]
   );
   const isSearchActive = matchedElementIds !== null;
-  // 
   
   const [liveSearchQuery, setLiveSearchQuery] = useState('');
   const liveMatchedElementIds = useMemo(
@@ -262,7 +259,6 @@ function Builder() {
     [activeLayout, liveSearchQuery]
   );
   const isLiveSearchActive = liveMatchedElementIds !== null;
-  // 
   
   const [language, setLanguage] = useState('en');
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
