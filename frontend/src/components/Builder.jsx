@@ -7,7 +7,8 @@ import {
   ClipboardCopy, ClipboardPaste, AlignLeft, AlignCenter, AlignRight,
   AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
   Move, Group, Ungroup, Download, X, Circle, Triangle, Link2, Search, LayoutList,
-  ChevronLeft, ChevronRight, ArrowUp as ArrowUpIcon, ArrowDown as ArrowDownIcon, ArrowLeft as ArrowLeftIcon, ArrowRight as ArrowRightIcon
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ArrowUp as ArrowUpIcon, ArrowDown as ArrowDownIcon, ArrowLeft as ArrowLeftIcon, ArrowRight as ArrowRightIcon,
+  Maximize2, Heart, Info
 } from 'lucide-react';
 import { TEMPLATES } from '../utils/TemplateData';
 import { Rnd } from 'react-rnd';
@@ -50,29 +51,75 @@ const apiFetch = async (url, options = {}) => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// IMAGE FILTERS & TRANSLATION HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SUPPORTED_LANGUAGES = [
+  { code: 'en', name: 'English', flag: '🇺🇸', dir: 'ltr' },
+  { code: 'ar', name: 'Arabic (العربية)', flag: '🇸🇦', dir: 'rtl' },
+  { code: 'fr', name: 'French (Français)', flag: '🇫🇷', dir: 'ltr' },
+  { code: 'es', name: 'Spanish (Español)', flag: '🇪🇸', dir: 'ltr' },
+  { code: 'de', name: 'German (Deutsch)', flag: '🇩🇪', dir: 'ltr' },
+  { code: 'it', name: 'Italian (Italiano)', flag: '🇮🇹', dir: 'ltr' },
+  { code: 'pt', name: 'Portuguese (Português)', flag: '🇵🇹', dir: 'ltr' },
+  { code: 'ru', name: 'Russian (Русский)', flag: '🇷🇺', dir: 'ltr' },
+  { code: 'zh', name: 'Chinese (中文)', flag: '🇨🇳', dir: 'ltr' },
+  { code: 'ja', name: 'Japanese (日本語)', flag: '🇯🇵', dir: 'ltr' },
+  { code: 'ko', name: 'Korean (한국어)', flag: '🇰🇷', dir: 'ltr' },
+  { code: 'hi', name: 'Hindi (हिन्दी)', flag: '🇮🇳', dir: 'ltr' },
+  { code: 'tr', name: 'Turkish (Türkçe)', flag: '🇹🇷', dir: 'ltr' }
+];
+
+function computeImageFilter(styles) {
+  if (!styles) return 'none';
+  const parts = [];
+  if (styles.filterBlur && styles.filterBlur !== '0' && styles.filterBlur !== '0px') parts.push(`blur(${styles.filterBlur}px)`);
+  if (styles.filterBrightness && styles.filterBrightness !== '100' && styles.filterBrightness !== '100%') parts.push(`brightness(${styles.filterBrightness}%)`);
+  if (styles.filterContrast && styles.filterContrast !== '100' && styles.filterContrast !== '100%') parts.push(`contrast(${styles.filterContrast}%)`);
+  if (styles.filterSaturate && styles.filterSaturate !== '100' && styles.filterSaturate !== '100%') parts.push(`saturate(${styles.filterSaturate}%)`);
+  if (styles.filterGrayscale && styles.filterGrayscale !== '0' && styles.filterGrayscale !== '0%') parts.push(`grayscale(${styles.filterGrayscale}%)`);
+  if (styles.filterSepia && styles.filterSepia !== '0' && styles.filterSepia !== '0%') parts.push(`sepia(${styles.filterSepia}%)`);
+  if (styles.filterHueRotate && styles.filterHueRotate !== '0' && styles.filterHueRotate !== '0deg') parts.push(`hue-rotate(${styles.filterHueRotate}deg)`);
+  if (styles.filterInvert && styles.filterInvert !== '0' && styles.filterInvert !== '0%') parts.push(`invert(${styles.filterInvert}%)`);
+  return parts.length > 0 ? parts.join(' ') : 'none';
+}
+
+function computeImageHoverFilter(styles) {
+  if (!styles) return 'none';
+  const base = computeImageFilter(styles);
+  const parts = base === 'none' ? [] : [base];
+  if (styles.hoverFilterBrightness && styles.hoverFilterBrightness !== '100') parts.push(`brightness(${styles.hoverFilterBrightness}%)`);
+  if (styles.hoverFilterSaturate && styles.hoverFilterSaturate !== '100') parts.push(`saturate(${styles.hoverFilterSaturate}%)`);
+  if (styles.hoverFilterBlur && styles.hoverFilterBlur !== '0') parts.push(`blur(${styles.hoverFilterBlur}px)`);
+  return parts.length ? parts.join(' ') : 'none';
+}
+
+function getImageAlphaMask(src, styles) {
+  if (!src || styles?.hoverOverlayRespectTransparency === false) return {};
+  const imageUrl = `url("${String(src).replace(/"/g, '\\"')}")`;
+  return {
+    maskImage: imageUrl,
+    WebkitMaskImage: imageUrl,
+    maskSize: styles?.objectFit || 'cover',
+    WebkitMaskSize: styles?.objectFit || 'cover',
+    maskPosition: styles?.objectPosition || 'center',
+    WebkitMaskPosition: styles?.objectPosition || 'center',
+    maskRepeat: 'no-repeat',
+    WebkitMaskRepeat: 'no-repeat',
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SEARCH SYSTEM — decoupled from UI rendering
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Pure filter function — zero React deps, easily swapped for a backend call.
- *
- * Future API swap:
- *   if (useBackend) {
- *     return apiFetch(`/api/elements/?q=${encodeURIComponent(query)}&page_id=${pageId}`)
- *       .then(r => r.json()).then(data => new Set(data.map(e => e.id)));
- *   }
- *
- * @param {Array}  layout  — activeLayout (sections with elements)
- * @param {string} query   — raw search string from user input
- * @returns {Set<string>|null} — matched element IDs, or null when search is cleared
- */
 function filterElements(layout, query) {
   if (!query || !query.trim()) return null; // null = no filter active, show everything
 
   const q = query.toLowerCase().trim();
   const matched = new Set();
 
-  layout.forEach(sec => {
+  (layout || []).forEach(sec => {
     (sec.elements || []).forEach(el => {
       const checks = [
         el.type,                        // element type: "heading", "button" …
@@ -93,11 +140,20 @@ function filterElements(layout, query) {
 }
 
 /**
- * Presentational-only search input.
- * Does ONE thing: calls onQueryChange when the user types.
- * Contains NO filter logic.
+ * Presentational search input with result navigation & counter.
  */
-function SearchInput({ value, onQueryChange, placeholder = 'Search elements…' }) {
+function SearchInput({ value, onQueryChange, matchCount = 0, currentMatchIndex = 0, onNextMatch, onPrevMatch, placeholder = 'Search elements…' }) {
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        onPrevMatch && onPrevMatch();
+      } else {
+        onNextMatch && onNextMatch();
+      }
+    }
+  };
+
   return (
     <div style={{ position: 'relative', marginBottom: '12px' }}>
       <Search
@@ -116,11 +172,12 @@ function SearchInput({ value, onQueryChange, placeholder = 'Search elements…' 
         type="text"
         value={value}
         onChange={e => onQueryChange(e.target.value)}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         style={{
           width: '100%',
           boxSizing: 'border-box',
-          padding: '7px 10px 7px 30px',
+          padding: '7px 85px 7px 30px',
           background: 'rgba(255,255,255,0.05)',
           border: '1px solid rgba(255,255,255,0.1)',
           borderRadius: '8px',
@@ -132,27 +189,49 @@ function SearchInput({ value, onQueryChange, placeholder = 'Search elements…' 
         onFocus={e => { e.target.style.borderColor = '#6366f1'; }}
         onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; }}
       />
-      {value && (
-        <button
-          onClick={() => onQueryChange('')}
-          style={{
-            position: 'absolute',
-            right: '8px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            background: 'none',
-            border: 'none',
-            color: '#64748b',
-            cursor: 'pointer',
-            padding: '2px',
-            display: 'flex',
-            alignItems: 'center',
-          }}
-          title="Clear search"
-        >
-          <X size={11} />
-        </button>
-      )}
+      <div style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+        {value && matchCount > 0 && (
+          <span style={{ fontSize: '10px', color: '#818cf8', fontWeight: 600, marginRight: '4px' }}>
+            {currentMatchIndex + 1}/{matchCount}
+          </span>
+        )}
+        {value && matchCount > 0 && (
+          <>
+            <button
+              onClick={onPrevMatch}
+              style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#e2e8f0', cursor: 'pointer', borderRadius: '3px', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
+              title="Previous match (Shift+Enter)"
+            >
+              <ChevronUp size={12} />
+            </button>
+            <button
+              onClick={onNextMatch}
+              style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#e2e8f0', cursor: 'pointer', borderRadius: '3px', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
+              title="Next match (Enter)"
+            >
+              <ChevronDown size={12} />
+            </button>
+          </>
+        )}
+        {value && (
+          <button
+            onClick={() => onQueryChange('')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#64748b',
+              cursor: 'pointer',
+              padding: '2px',
+              display: 'flex',
+              alignItems: 'center',
+              marginLeft: '2px'
+            }}
+            title="Clear search"
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -186,6 +265,181 @@ function Builder() {
   // 
   
   const [language, setLanguage] = useState('en');
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translationCache, setTranslationCache] = useState({});
+
+  // Cross-page search results array
+  const searchResults = useMemo(() => {
+    if (!searchQuery || !searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase().trim();
+    const results = [];
+    
+    (pages || []).forEach(pg => {
+      let layout = [];
+      if (pg.id === activePage?.id) {
+        layout = activeLayout;
+      } else {
+        try {
+          layout = typeof pg.layout === 'string' ? JSON.parse(pg.layout) : (pg.layout || []);
+        } catch(e) {
+          layout = [];
+        }
+      }
+      
+      (layout || []).forEach(sec => {
+        (sec.elements || []).forEach(el => {
+          const textToSearch = [
+            el.type,
+            el.content?.text,
+            el.content?.label,
+            el.content?.alt,
+            el.content?.placeholder,
+            el.content?.src,
+            el.id
+          ].filter(Boolean).join(' ');
+
+          if (textToSearch.toLowerCase().includes(q)) {
+            results.push({
+              pageId: pg.id,
+              pageTitle: pg.title || pg.name || 'Untitled',
+              elementId: el.id,
+              elementType: el.type
+            });
+          }
+        });
+      });
+    });
+
+    return results;
+  }, [searchQuery, pages, activePage, activeLayout]);
+
+  const handleNextMatch = () => {
+    if (searchResults.length === 0) return;
+    const nextIdx = (currentMatchIndex + 1) % searchResults.length;
+    setCurrentMatchIndex(nextIdx);
+    focusMatch(searchResults[nextIdx]);
+  };
+
+  const handlePrevMatch = () => {
+    if (searchResults.length === 0) return;
+    const prevIdx = (currentMatchIndex - 1 + searchResults.length) % searchResults.length;
+    setCurrentMatchIndex(prevIdx);
+    focusMatch(searchResults[prevIdx]);
+  };
+
+  const focusMatch = (match) => {
+    if (!match) return;
+    if (match.pageId && match.pageId !== activePage?.id) {
+      const targetPg = pages.find(p => p.id === match.pageId);
+      if (targetPg) {
+        handleSwitchPage(targetPg);
+      }
+    }
+    setSelectedElementIds([match.elementId]);
+    setFocusedElementId(match.elementId);
+    setTimeout(() => {
+      const elNode = document.querySelector(`[data-element-id="${match.elementId}"]`);
+      if (elNode) {
+        elNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 150);
+  };
+
+  useEffect(() => {
+    setCurrentMatchIndex(0);
+    if (searchQuery.trim() && searchResults.length) focusMatch(searchResults[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
+
+  const handleTranslateAll = async (targetLangCode) => {
+    if (targetLangCode === language) return;
+    setIsTranslating(true);
+    setLanguage(targetLangCode);
+
+    try {
+      const translateText = async (str) => {
+        if (!str || !str.trim() || targetLangCode === 'en') return str;
+        const key = `${targetLangCode}:${str}`;
+        if (translationCache[key]) return translationCache[key];
+        try {
+          const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(str)}&langpair=en|${targetLangCode}`);
+          const data = await res.json();
+          if (data.responseData?.translatedText) {
+            const trans = data.responseData.translatedText;
+            setTranslationCache(prev => ({ ...prev, [key]: trans }));
+            return trans;
+          }
+        } catch(e) {
+          console.error(e);
+        }
+        return str;
+      };
+
+      const translateLayout = async (layout) => Promise.all((layout || []).map(async (sec) => {
+        const updatedElements = await Promise.all((sec.elements || []).map(async (el) => {
+          const origText = el.content?.originalText || el.content?.text;
+          const origAlt = el.content?.originalAlt || el.content?.alt;
+          const origPlaceholder = el.content?.originalPlaceholder || el.content?.placeholder;
+          const origLabel = el.content?.originalLabel || el.content?.label;
+          const origButtonText = el.content?.originalButtonText || el.content?.buttonText;
+
+          let newText = el.content?.text;
+          let newAlt = el.content?.alt;
+          let newPlaceholder = el.content?.placeholder;
+          let newLabel = el.content?.label;
+          let newButtonText = el.content?.buttonText;
+
+          if (origText && ['heading', 'text', 'button', 'link'].includes(el.type)) {
+            newText = targetLangCode === 'en' ? origText : await translateText(origText);
+          }
+          if (origAlt && el.type === 'image') {
+            newAlt = targetLangCode === 'en' ? origAlt : await translateText(origAlt);
+          }
+          if (origPlaceholder && ['input', 'site_search'].includes(el.type)) {
+            newPlaceholder = targetLangCode === 'en' ? origPlaceholder : await translateText(origPlaceholder);
+          }
+          if (origLabel) newLabel = targetLangCode === 'en' ? origLabel : await translateText(origLabel);
+          if (origButtonText) newButtonText = targetLangCode === 'en' ? origButtonText : await translateText(origButtonText);
+
+          return {
+            ...el,
+            content: {
+              ...el.content,
+              originalText: origText,
+              originalAlt: origAlt,
+              originalPlaceholder: origPlaceholder,
+              originalLabel: origLabel,
+              originalButtonText: origButtonText,
+              text: newText,
+              alt: newAlt,
+              placeholder: newPlaceholder,
+              label: newLabel,
+              buttonText: newButtonText
+            }
+          };
+        }));
+        return { ...sec, elements: updatedElements };
+      }));
+
+      const newLayout = await translateLayout(activeLayout);
+
+      updateLayout(newLayout);
+      const translatedOtherPages = await Promise.all((pages || []).filter(page => page.id !== activePage?.id).map(async page => {
+        const pageLayout = typeof page.layout === 'string' ? JSON.parse(page.layout) : (page.layout || []);
+        const translatedLayout = await translateLayout(pageLayout);
+        savePageLayout(translatedLayout, page);
+        return { ...page, layout: translatedLayout };
+      }));
+      if (translatedOtherPages.length) {
+        setPages(prev => prev.map(page => page.id === activePage?.id ? { ...page, layout: newLayout } : (translatedOtherPages.find(item => item.id === page.id) || page)));
+      }
+    } catch(err) {
+      console.error('Translation error:', err);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
   const DICT = {
     en: {
       builder: 'Builder',
@@ -1298,6 +1552,14 @@ function Builder() {
     const targetLayout = page.layout || [];
     targetLayout.forEach(sec => {
       (sec.elements || []).forEach(el => {
+        if (el.type === 'image') {
+          const hoverFilter = computeImageHoverFilter(el.styles);
+          const scale = el.styles?.imageHoverScale || '1';
+          const rotation = el.styles?.imageHoverRotate || '0';
+          if (el.styles?.hoverOverlayEnabled || hoverFilter !== computeImageFilter(el.styles) || scale !== '1' || rotation !== '0') {
+            hoverStylesCss += `[data-element-id="${el.id}"]:hover .image-media { filter: ${hoverFilter} !important; transform: scale(${scale}) rotate(${rotation}deg); }`;
+          }
+        }
         if (el.hoverStyles) {
           let hoverRules = '';
           if (el.hoverStyles.backgroundColor) hoverRules += `background-color: ${el.hoverStyles.backgroundColor} !important; `;
@@ -1393,6 +1655,11 @@ function Builder() {
       }
       
       .site-builder-btn:hover { opacity: 0.9; }
+
+      .image-frame { position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: inherit; }
+      .image-media { width: 100%; height: 100%; display: block; border-radius: inherit; }
+      .image-frame:hover .img-hover-overlay { opacity: var(--overlay-opacity, 1) !important; }
+      .search-match { outline: 3px solid var(--primary) !important; outline-offset: 3px; box-shadow: 0 0 0 6px rgba(99,102,241,.18) !important; }
 
       .platform-contact-form {
         width: 100%;
@@ -1547,7 +1814,30 @@ function Builder() {
             innerMarkup = `<button class="site-builder-btn" style="border: none; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; padding: 0; border-radius: inherit; white-space: pre-wrap;">${el.content?.text || 'Button'}</button>`;
           }
         } else if (el.type === 'image') {
-          innerMarkup = `<img src="${el.content?.src}" alt="${el.content?.alt || 'Graphic'}" style="width: 100%; height: 100%; display: block; border-radius: inherit;" />`;
+          const imgFilter = computeImageFilter(el.styles);
+          const fit = el.styles?.objectFit || 'cover';
+          const pos = el.styles?.objectPosition || 'center';
+          const hasOverlay = el.styles?.hoverOverlayEnabled;
+          const overlayColor = el.styles?.hoverOverlayColor || 'rgba(0,0,0,0.6)';
+          const overlayTextColor = el.styles?.hoverOverlayTextColor || '#ffffff';
+          const overlayCoverage = el.styles?.hoverOverlayCoverage || 'full';
+          const overlayText = el.styles?.hoverOverlayText || '';
+          const maskSource = el.content?.src || 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80';
+          const alphaMaskCss = el.styles?.hoverOverlayRespectTransparency === false ? '' : `mask-image:url(&quot;${maskSource}&quot;);-webkit-mask-image:url(&quot;${maskSource}&quot;);mask-size:${fit};-webkit-mask-size:${fit};mask-position:${pos};-webkit-mask-position:${pos};mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat;`;
+
+          let overlayStyles = `position: absolute; left: 0; top: 0; width: 100%; height: 100%; background-color: ${overlayColor}; color: ${overlayTextColor}; display: flex; align-items: center; justify-content: center; flex-direction: column; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; padding: 12px; box-sizing: border-box; font-weight: 600; text-align: center; border-radius: inherit;${alphaMaskCss}`;
+          if (overlayCoverage === 'top-half') overlayStyles += ` height: 50%;`;
+          else if (overlayCoverage === 'bottom-half') overlayStyles += ` top: 50%; height: 50%;`;
+          else if (overlayCoverage === 'left-half') overlayStyles += ` width: 50%;`;
+          else if (overlayCoverage === 'right-half') overlayStyles += ` left: 50%; width: 50%;`;
+          else if (overlayCoverage === 'gradient-bottom') overlayStyles += ` background: linear-gradient(to top, ${overlayColor}, transparent); top: 40%; height: 60%; align-items: flex-end; justify-content: flex-end;`;
+
+          innerMarkup = `
+            <div class="image-frame" style="--overlay-opacity: ${el.styles?.hoverOverlayOpacity ?? 1};">
+              <img class="image-media" src="${el.content?.src || 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80'}" alt="${el.content?.alt || 'Graphic'}" style="object-fit: ${fit}; object-position: ${pos}; filter: ${imgFilter}; transition: filter ${el.styles?.imageHoverSpeed || '0.3'}s ease, transform ${el.styles?.imageHoverSpeed || '0.3'}s ease;" />
+              ${hasOverlay ? `<div class="img-hover-overlay" style="${overlayStyles}">${overlayText ? `<span>${overlayText}</span>` : ''}</div>` : ''}
+            </div>
+          `;
         } else if (el.type === 'video') {
           const src = el.content?.src || '';
           const isYoutube = src.includes('youtube.com') || src.includes('youtu.be');
@@ -1981,9 +2271,9 @@ function Builder() {
 
           window.runSiteSearch = function(query) {
             const q = query.toLowerCase().trim();
-            if (!q) return;
-
             const elements = document.querySelectorAll('.searchable-site-element');
+            elements.forEach(el => el.classList.remove('search-match'));
+            if (!q) return;
             let firstMatch = null;
 
             for (let el of elements) {
@@ -2007,8 +2297,8 @@ function Builder() {
               }
 
               if (isMatch) {
-                firstMatch = el;
-                break;
+                el.classList.add('search-match');
+                if (!firstMatch) firstMatch = el;
               }
             }
 
@@ -3393,9 +3683,22 @@ function Builder() {
   };
 
   const getHoverStylesCss = () => {
-    let css = '';
+    let css = '.builder-canvas-element.search-match { outline: 3px solid var(--primary) !important; outline-offset: 3px; box-shadow: 0 0 0 6px rgba(99,102,241,.18) !important; }';
     activeLayout.forEach(sec => {
       (sec.elements || []).forEach(el => {
+        if (el.type === 'image') {
+          const speed = el.styles?.imageHoverSpeed || '0.3';
+          const scale = el.styles?.imageHoverScale || '1';
+          const rotation = el.styles?.imageHoverRotate || '0';
+          const hoverFilter = computeImageHoverFilter(el.styles);
+          if (el.styles?.hoverOverlayEnabled || scale !== '1' || rotation !== '0' || hoverFilter !== computeImageFilter(el.styles)) {
+            css += `
+              [data-element-id="${el.id}"] .image-media { transition: filter ${speed}s ease, transform ${speed}s ease; }
+              [data-element-id="${el.id}"]:hover .image-media { filter: ${hoverFilter}; transform: scale(${scale}) rotate(${rotation}deg); }
+              [data-element-id="${el.id}"]:hover .img-hover-overlay { opacity: ${el.styles?.hoverOverlayOpacity ?? 1}; }
+            `;
+          }
+        }
         if (el.hoverStyles && Object.keys(el.hoverStyles).some(k => el.hoverStyles[k] && el.hoverStyles[k] !== 'none')) {
           const speed = el.hoverStyles.transitionSpeed || '0.3';
           let hoverRules = '';
@@ -3435,8 +3738,8 @@ function Builder() {
     const isSearchDimmed = isSearchActive && !matchedElementIds.has(el.id);
     
     // Live frontend search filter
-    const isLiveSearchHidden = isPreview && isLiveSearchActive && !liveMatchedElementIds.has(el.id);
-    if (isLiveSearchHidden) return null;
+    // Site search is navigational: retain the full page and scroll/highlight matches.
+    // Hiding everything but a match made it impossible to navigate back through a page.
 
     const styles = renderInlineStyles(el.styles);
     if (['heading', 'text', 'button'].includes(el.type)) {
@@ -3788,8 +4091,82 @@ function Builder() {
     }
 
     if (el.type === 'image') {
+      const imgFilter = computeImageFilter(el.styles);
+      const fit = el.styles?.objectFit || 'cover';
+      const pos = el.styles?.objectPosition || 'center';
+      const hasOverlay = el.styles?.hoverOverlayEnabled;
+      const overlayColor = el.styles?.hoverOverlayColor || 'rgba(0,0,0,0.6)';
+      const overlayTextColor = el.styles?.hoverOverlayTextColor || '#ffffff';
+      const overlayCoverage = el.styles?.hoverOverlayCoverage || 'full';
+      const overlayText = el.styles?.hoverOverlayText || '';
+      const overlayIcon = el.styles?.hoverOverlayIcon || 'none';
+      const alphaMask = getImageAlphaMask(el.content?.src, el.styles);
+
+      let overlayStyle = {
+        position: 'absolute',
+        left: 0, top: 0, width: '100%', height: '100%',
+        backgroundColor: overlayColor,
+        color: overlayTextColor,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'column',
+        gap: '6px',
+        opacity: 0,
+        transition: 'opacity 0.3s ease-in-out',
+        pointerEvents: 'none',
+        boxSizing: 'border-box',
+        padding: '12px',
+        textAlign: 'center',
+        fontSize: '13px',
+        fontWeight: '600',
+        zIndex: 2,
+        borderRadius: 'inherit',
+        ...alphaMask
+      };
+
+      if (overlayCoverage === 'top-half') { overlayStyle.height = '50%'; }
+      else if (overlayCoverage === 'bottom-half') { overlayStyle.top = '50%'; overlayStyle.height = '50%'; }
+      else if (overlayCoverage === 'left-half') { overlayStyle.width = '50%'; }
+      else if (overlayCoverage === 'right-half') { overlayStyle.left = '50%'; overlayStyle.width = '50%'; }
+      else if (overlayCoverage === 'gradient-bottom') {
+        overlayStyle.backgroundColor = 'transparent';
+        overlayStyle.background = `linear-gradient(to top, ${overlayColor}, transparent)`;
+        overlayStyle.top = '40%'; overlayStyle.height = '60%';
+        overlayStyle.alignItems = 'flex-end';
+        overlayStyle.justifyContent = 'flex-end';
+        overlayStyle.paddingBottom = '15px';
+      }
+
       return wrapWithRnd(
-        <img src={el.content?.src} alt={el.content?.alt || 'Graphic'} draggable={false} style={{ width: '100%', height: '100%', display: 'block', ...styles }} />
+        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', borderRadius: styles.borderRadius || 'inherit' }}>
+          <img
+            className="image-media"
+            src={el.content?.src || 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80'}
+            alt={el.content?.alt || 'Graphic'}
+            draggable={false}
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'block',
+              objectFit: fit,
+              objectPosition: pos,
+              filter: imgFilter,
+              transition: 'filter 0.3s ease, transform 0.3s ease',
+              ...styles
+            }}
+          />
+          {hasOverlay && (
+            <div className="img-hover-overlay" style={overlayStyle}>
+              {overlayIcon === 'zoom-in' && <Maximize2 size={18} />}
+              {overlayIcon === 'link' && <Link2 size={18} />}
+              {overlayIcon === 'eye' && <Eye size={18} />}
+              {overlayIcon === 'heart' && <Heart size={18} />}
+              {overlayIcon === 'info' && <Info size={18} />}
+              {overlayText && <span>{overlayText}</span>}
+            </div>
+          )}
+        </div>
       );
     }
 
@@ -3904,42 +4281,19 @@ function Builder() {
               if (isPreview) {
                 setLiveSearchQuery(query);
                 const q = query.toLowerCase().trim();
-                if (q) {
-                  let firstMatch = null;
-                  for (let sec of activeLayout) {
-                    for (let item of (sec.elements || [])) {
-                      if (item.type === 'site_search') continue;
-                      const checks = [
-                        item.type,
-                        item.content?.text,
-                        item.content?.label,
-                        item.content?.alt,
-                        item.content?.placeholder,
-                        item.content?.src,
-                        item.id
-                      ];
-                      if (checks.some(v => v && String(v).toLowerCase().includes(q))) {
-                        firstMatch = item;
-                        break;
-                      }
-                    }
-                    if (firstMatch) break;
+                const nodes = [...document.querySelectorAll('.builder-canvas-element')];
+                let firstMatch = null;
+                nodes.forEach(node => {
+                  node.classList.remove('search-match');
+                  if (!q || node.querySelector('input[type="text"]')) return;
+                  const imageAlt = node.querySelector('img')?.alt || '';
+                  const searchableText = `${node.innerText || ''} ${imageAlt} ${node.dataset.elementId || ''}`.toLowerCase();
+                  if (searchableText.includes(q)) {
+                    node.classList.add('search-match');
+                    if (!firstMatch) firstMatch = node;
                   }
-
-                  if (firstMatch) {
-                    const domEl = document.querySelector(`[data-element-id="${firstMatch.id}"]`);
-                    if (domEl) {
-                      domEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                      domEl.style.outline = '4px solid var(--primary)';
-                      domEl.style.boxShadow = '0 0 20px rgba(99,102,241,0.6)';
-                      domEl.style.transition = 'outline 0.3s, box-shadow 0.3s';
-                      setTimeout(() => {
-                        domEl.style.outline = '';
-                        domEl.style.boxShadow = '';
-                      }, 1500);
-                    }
-                  }
-                }
+                });
+                if (firstMatch) firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
               }
             }}
             style={{ 
@@ -4661,14 +5015,36 @@ function Builder() {
             <Download size={14} /> Export
           </button>
 
-          <button 
-            onClick={() => setLanguage(lang => lang === 'en' ? 'ar' : 'en')}
-            className="btn-secondary" 
-            style={{ padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
-            title="Toggle Language"
-          >
-            <Globe size={14} /> {language === 'en' ? 'AR' : 'EN'}
-          </button>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Globe size={14} style={{ position: 'absolute', left: '8px', color: '#94a3b8', pointerEvents: 'none' }} />
+            <select
+              value={language}
+              disabled={isTranslating}
+              onChange={(e) => handleTranslateAll(e.target.value)}
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: '#e2e8f0',
+                padding: '6px 10px 6px 26px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                cursor: isTranslating ? 'wait' : 'pointer',
+                outline: 'none'
+              }}
+              title="Select Site & UI Language"
+            >
+              {SUPPORTED_LANGUAGES.map(lang => (
+                <option key={lang.code} value={lang.code} style={{ background: '#1e293b', color: '#fff' }}>
+                  {lang.flag} {lang.name}
+                </option>
+              ))}
+            </select>
+            {isTranslating && (
+              <span style={{ fontSize: '10px', color: '#818cf8', marginLeft: '6px', whiteSpace: 'nowrap' }}>
+                ⏳ Translating...
+              </span>
+            )}
+          </div>
 
           <button 
             onClick={() => setIsPreview(!isPreview)}
@@ -4939,6 +5315,10 @@ function Builder() {
                   <SearchInput
                     value={searchQuery}
                     onQueryChange={setSearchQuery}
+                    matchCount={searchResults.length}
+                    currentMatchIndex={currentMatchIndex}
+                    onNextMatch={handleNextMatch}
+                    onPrevMatch={handlePrevMatch}
                     placeholder="Search by type, text, alt…"
                   />
 
@@ -5972,6 +6352,207 @@ function Builder() {
                         onChange={(e) => updateSelectedElement({ content: { alt: e.target.value } })}
                         placeholder="Image description"
                       />
+                    </div>
+                  )}
+
+                  {selectedElement.type === 'image' && (
+                    <div style={{ marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '15px' }}>
+                      <h4 style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--primary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        🖼️ Image Display & Object Fit
+                      </h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                        <div>
+                          <label style={{ fontSize: '10px' }}>Object Fit</label>
+                          <select
+                            value={selectedElement.styles?.objectFit || 'cover'}
+                            onChange={(e) => updateSelectedElement({ styles: { objectFit: e.target.value } })}
+                            style={{ fontSize: '11px', padding: '4px' }}
+                          >
+                            <option value="cover">Cover (Fill)</option>
+                            <option value="contain">Contain (Fit)</option>
+                            <option value="fill">Stretch</option>
+                            <option value="none">Original</option>
+                            <option value="scale-down">Scale Down</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '10px' }}>Position</label>
+                          <select
+                            value={selectedElement.styles?.objectPosition || 'center'}
+                            onChange={(e) => updateSelectedElement({ styles: { objectPosition: e.target.value } })}
+                            style={{ fontSize: '11px', padding: '4px' }}
+                          >
+                            <option value="center">Center</option>
+                            <option value="top">Top</option>
+                            <option value="bottom">Bottom</option>
+                            <option value="left">Left</option>
+                            <option value="right">Right</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Image CSS Filters */}
+                      <h4 style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--primary)', marginBottom: '10px', marginTop: '15px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        🎨 CSS Image Filters
+                      </h4>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '15px' }}>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8' }}>
+                            <span>Blur</span>
+                            <span>{selectedElement.styles?.filterBlur || 0}px</span>
+                          </div>
+                          <input type="range" min="0" max="20" value={selectedElement.styles?.filterBlur || 0} onChange={(e) => updateSelectedElement({ styles: { filterBlur: e.target.value } })} style={{ padding: 0 }} />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8' }}>
+                            <span>Brightness</span>
+                            <span>{selectedElement.styles?.filterBrightness || 100}%</span>
+                          </div>
+                          <input type="range" min="0" max="200" value={selectedElement.styles?.filterBrightness || 100} onChange={(e) => updateSelectedElement({ styles: { filterBrightness: e.target.value } })} style={{ padding: 0 }} />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8' }}>
+                            <span>Contrast</span>
+                            <span>{selectedElement.styles?.filterContrast || 100}%</span>
+                          </div>
+                          <input type="range" min="0" max="200" value={selectedElement.styles?.filterContrast || 100} onChange={(e) => updateSelectedElement({ styles: { filterContrast: e.target.value } })} style={{ padding: 0 }} />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8' }}>
+                            <span>Saturation</span>
+                            <span>{selectedElement.styles?.filterSaturate || 100}%</span>
+                          </div>
+                          <input type="range" min="0" max="200" value={selectedElement.styles?.filterSaturate || 100} onChange={(e) => updateSelectedElement({ styles: { filterSaturate: e.target.value } })} style={{ padding: 0 }} />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8' }}>
+                            <span>Grayscale</span>
+                            <span>{selectedElement.styles?.filterGrayscale || 0}%</span>
+                          </div>
+                          <input type="range" min="0" max="100" value={selectedElement.styles?.filterGrayscale || 0} onChange={(e) => updateSelectedElement({ styles: { filterGrayscale: e.target.value } })} style={{ padding: 0 }} />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8' }}>
+                            <span>Sepia</span>
+                            <span>{selectedElement.styles?.filterSepia || 0}%</span>
+                          </div>
+                          <input type="range" min="0" max="100" value={selectedElement.styles?.filterSepia || 0} onChange={(e) => updateSelectedElement({ styles: { filterSepia: e.target.value } })} style={{ padding: 0 }} />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8' }}>
+                            <span>Hue Rotate</span>
+                            <span>{selectedElement.styles?.filterHueRotate || 0}°</span>
+                          </div>
+                          <input type="range" min="0" max="360" value={selectedElement.styles?.filterHueRotate || 0} onChange={(e) => updateSelectedElement({ styles: { filterHueRotate: e.target.value } })} style={{ padding: 0 }} />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8' }}>
+                            <span>Invert</span>
+                            <span>{selectedElement.styles?.filterInvert || 0}%</span>
+                          </div>
+                          <input type="range" min="0" max="100" value={selectedElement.styles?.filterInvert || 0} onChange={(e) => updateSelectedElement({ styles: { filterInvert: e.target.value } })} style={{ padding: 0 }} />
+                        </div>
+                      </div>
+
+                      <h4 style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--primary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Image Hover Effects
+                      </h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '15px' }}>
+                        <div><label style={{ fontSize: '10px' }}>Zoom ({selectedElement.styles?.imageHoverScale || 1}×)</label><input type="range" min="1" max="1.5" step="0.05" value={selectedElement.styles?.imageHoverScale || 1} onChange={(e) => updateSelectedElement({ styles: { imageHoverScale: e.target.value } })} style={{ padding: 0 }} /></div>
+                        <div><label style={{ fontSize: '10px' }}>Rotate ({selectedElement.styles?.imageHoverRotate || 0}°)</label><input type="range" min="-15" max="15" value={selectedElement.styles?.imageHoverRotate || 0} onChange={(e) => updateSelectedElement({ styles: { imageHoverRotate: e.target.value } })} style={{ padding: 0 }} /></div>
+                        <div><label style={{ fontSize: '10px' }}>Hover brightness</label><input type="range" min="50" max="150" value={selectedElement.styles?.hoverFilterBrightness || 100} onChange={(e) => updateSelectedElement({ styles: { hoverFilterBrightness: e.target.value } })} style={{ padding: 0 }} /></div>
+                        <div><label style={{ fontSize: '10px' }}>Hover saturation</label><input type="range" min="0" max="200" value={selectedElement.styles?.hoverFilterSaturate || 100} onChange={(e) => updateSelectedElement({ styles: { hoverFilterSaturate: e.target.value } })} style={{ padding: 0 }} /></div>
+                        <div><label style={{ fontSize: '10px' }}>Hover blur</label><input type="range" min="0" max="12" value={selectedElement.styles?.hoverFilterBlur || 0} onChange={(e) => updateSelectedElement({ styles: { hoverFilterBlur: e.target.value } })} style={{ padding: 0 }} /></div>
+                        <div><label style={{ fontSize: '10px' }}>Speed ({selectedElement.styles?.imageHoverSpeed || 0.3}s)</label><input type="range" min="0.1" max="1.5" step="0.1" value={selectedElement.styles?.imageHoverSpeed || 0.3} onChange={(e) => updateSelectedElement({ styles: { imageHoverSpeed: e.target.value } })} style={{ padding: 0 }} /></div>
+                      </div>
+
+                      {/* Hover Overlay Controls */}
+                      <h4 style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--primary)', marginBottom: '10px', marginTop: '15px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        ✨ Image Hover Overlay
+                      </h4>
+
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', cursor: 'pointer', marginBottom: '10px' }}>
+                        <input
+                          type="checkbox"
+                          checked={!!selectedElement.styles?.hoverOverlayEnabled}
+                          onChange={(e) => updateSelectedElement({ styles: { hoverOverlayEnabled: e.target.checked } })}
+                        />
+                        Enable Hover Overlay
+                      </label>
+
+                      {selectedElement.styles?.hoverOverlayEnabled && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '10px', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={selectedElement.styles?.hoverOverlayRespectTransparency !== false} onChange={(e) => updateSelectedElement({ styles: { hoverOverlayRespectTransparency: e.target.checked } })} />
+                            Respect transparent image pixels
+                          </label>
+                          <div>
+                            <label style={{ fontSize: '10px' }}>Coverage Area</label>
+                            <select
+                              value={selectedElement.styles?.hoverOverlayCoverage || 'full'}
+                              onChange={(e) => updateSelectedElement({ styles: { hoverOverlayCoverage: e.target.value } })}
+                              style={{ fontSize: '11px', padding: '4px' }}
+                            >
+                              <option value="full">Full Coverage</option>
+                              <option value="top-half">Top Half</option>
+                              <option value="bottom-half">Bottom Half</option>
+                              <option value="left-half">Left Half</option>
+                              <option value="right-half">Right Half</option>
+                              <option value="gradient-bottom">Gradient Bottom</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ fontSize: '10px' }}>Overlay Text</label>
+                            <input
+                              type="text"
+                              value={selectedElement.styles?.hoverOverlayText || ''}
+                              onChange={(e) => updateSelectedElement({ styles: { hoverOverlayText: e.target.value } })}
+                              placeholder="Text on hover..."
+                              style={{ fontSize: '11px' }}
+                            />
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            <div>
+                              <label style={{ fontSize: '10px' }}>Overlay Color</label>
+                              <input
+                                type="color"
+                                value={selectedElement.styles?.hoverOverlayColor || '#000000'}
+                                onChange={(e) => updateSelectedElement({ styles: { hoverOverlayColor: e.target.value } })}
+                                style={{ height: '30px', padding: 0, border: 'none', cursor: 'pointer' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: '10px' }}>Text Color</label>
+                              <input
+                                type="color"
+                                value={selectedElement.styles?.hoverOverlayTextColor || '#ffffff'}
+                                onChange={(e) => updateSelectedElement({ styles: { hoverOverlayTextColor: e.target.value } })}
+                                style={{ height: '30px', padding: 0, border: 'none', cursor: 'pointer' }}
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label style={{ fontSize: '10px' }}>Overlay opacity ({Math.round((selectedElement.styles?.hoverOverlayOpacity ?? 1) * 100)}%)</label>
+                            <input type="range" min="0" max="1" step="0.05" value={selectedElement.styles?.hoverOverlayOpacity ?? 1} onChange={(e) => updateSelectedElement({ styles: { hoverOverlayOpacity: e.target.value } })} style={{ padding: 0 }} />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: '10px' }}>Overlay Icon</label>
+                            <select
+                              value={selectedElement.styles?.hoverOverlayIcon || 'none'}
+                              onChange={(e) => updateSelectedElement({ styles: { hoverOverlayIcon: e.target.value } })}
+                              style={{ fontSize: '11px', padding: '4px' }}
+                            >
+                              <option value="none">None</option>
+                              <option value="zoom-in">Zoom Icon</option>
+                              <option value="link">Link Icon</option>
+                              <option value="eye">Eye Icon</option>
+                              <option value="heart">Heart Icon</option>
+                              <option value="info">Info Icon</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 

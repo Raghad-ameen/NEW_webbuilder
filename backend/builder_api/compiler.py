@@ -2,6 +2,30 @@ import re
 import urllib.parse
 import json
 
+IMAGE_ONLY_STYLE_KEYS = {
+    'objectFit', 'objectPosition', 'filterBlur', 'filterBrightness', 'filterContrast',
+    'filterSaturate', 'filterGrayscale', 'filterSepia', 'filterHueRotate', 'filterInvert',
+    'hoverOverlayEnabled', 'hoverOverlayColor', 'hoverOverlayTextColor', 'hoverOverlayCoverage',
+    'hoverOverlayText', 'hoverOverlayIcon', 'hoverOverlayOpacity', 'imageHoverScale',
+    'imageHoverRotate', 'imageHoverSpeed', 'hoverFilterBrightness', 'hoverFilterSaturate',
+    'hoverFilterBlur'
+}
+
+def image_filter(styles, hover=False):
+    styles = styles or {}
+    values = [
+        ('filterBlur', 'blur', 'px', '0'), ('filterBrightness', 'brightness', '%', '100'),
+        ('filterContrast', 'contrast', '%', '100'), ('filterSaturate', 'saturate', '%', '100'),
+        ('filterGrayscale', 'grayscale', '%', '0'), ('filterSepia', 'sepia', '%', '0'),
+        ('filterHueRotate', 'hue-rotate', 'deg', '0'), ('filterInvert', 'invert', '%', '0'),
+    ]
+    parts = [f'{name}({styles[key]}{unit})' for key, name, unit, default in values if str(styles.get(key, default)) != default]
+    if hover:
+        for key, name, unit, default in [('hoverFilterBrightness', 'brightness', '%', '100'), ('hoverFilterSaturate', 'saturate', '%', '100'), ('hoverFilterBlur', 'blur', 'px', '0')]:
+            if str(styles.get(key, default)) != default:
+                parts.append(f'{name}({styles[key]}{unit})')
+    return ' '.join(parts) or 'none'
+
 def camel_to_kebab(styles_dict):
     if not styles_dict:
         return ""
@@ -127,6 +151,9 @@ def render_compiled_element(el, site_id):
     
     if styles:
         styles_copy = dict(styles)
+        if el_type == 'image':
+            for key in IMAGE_ONLY_STYLE_KEYS:
+                styles_copy.pop(key, None)
         if el_type == 'shape':
             styles_copy.pop('backgroundColor', None)
             styles_copy.pop('boxShadow', None)
@@ -171,7 +198,24 @@ def render_compiled_element(el, site_id):
     elif el_type == 'image':
         src = content.get('src', 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=600&q=80')
         alt = content.get('alt', 'Image')
-        inner_markup = f'<img src="{src}" alt="{alt}" style="width: 100%; height: 100%; display: block; border-radius: inherit;" />'
+        fit = styles.get('objectFit', 'cover')
+        position = styles.get('objectPosition', 'center')
+        overlay = styles.get('hoverOverlayEnabled', False)
+        coverage = styles.get('hoverOverlayCoverage', 'full')
+        overlay_positions = {
+            'top-half': 'top:0;height:50%;', 'bottom-half': 'top:50%;height:50%;',
+            'left-half': 'left:0;width:50%;', 'right-half': 'left:50%;width:50%;',
+            'gradient-bottom': 'top:40%;height:60%;background:linear-gradient(to top, var(--overlay-color), transparent);align-items:flex-end;justify-content:flex-end;'
+        }
+        overlay_style = f'--overlay-color:{styles.get("hoverOverlayColor", "rgba(0,0,0,.6)")};background:var(--overlay-color);color:{styles.get("hoverOverlayTextColor", "#fff")};{overlay_positions.get(coverage, "")}'
+        if styles.get('hoverOverlayRespectTransparency', True):
+            overlay_style += f'mask-image:url("{src}");-webkit-mask-image:url("{src}");mask-size:{fit};-webkit-mask-size:{fit};mask-position:{position};-webkit-mask-position:{position};mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat;'
+        overlay_markup = f'<div class="img-hover-overlay" style="{overlay_style}">{styles.get("hoverOverlayText", "")}</div>' if overlay else ''
+        inner_markup = f'<div class="image-frame"><img class="image-media" src="{src}" alt="{alt}" style="object-fit:{fit};object-position:{position};filter:{image_filter(styles)};" />{overlay_markup}</div>'
+
+    elif el_type == 'site_search':
+        placeholder = content.get('placeholder', 'Search this site...')
+        inner_markup = f'<div class="site-search"><span aria-hidden="true">⌕</span><input type="search" placeholder="{placeholder}" oninput="runSiteSearch(this.value)" aria-label="Search this site" /></div>'
         
     elif el_type == 'video':
         src = content.get('src', '')
@@ -554,7 +598,6 @@ def compile_layout_to_html(site, page, pages_list):
     page_bg_color = bg_color
     try:
         if meta_desc and meta_desc.startswith('{'):
-            import json
             settings = json.loads(meta_desc)
             if settings.get('useGlobalBackground') is False:
                 page_bg_color = settings.get('backgroundColor', bg_color)
@@ -592,6 +635,15 @@ def compile_layout_to_html(site, page, pages_list):
         
         # Gathering hover styles for this section
         for el in section.get('elements', []):
+            if el.get('type') == 'image':
+                image_styles = el.get('styles', {})
+                scale = image_styles.get('imageHoverScale', 1)
+                rotate = image_styles.get('imageHoverRotate', 0)
+                speed = image_styles.get('imageHoverSpeed', .3)
+                if image_styles.get('hoverOverlayEnabled') or str(scale) != '1' or str(rotate) != '0' or image_filter(image_styles, True) != image_filter(image_styles):
+                    hover_styles_css += f'''[data-element-id="{el.get('id', '')}"] .image-media {{ transition: filter {speed}s ease, transform {speed}s ease; }}
+                    [data-element-id="{el.get('id', '')}"]:hover .image-media {{ filter: {image_filter(image_styles, True)} !important; transform: scale({scale}) rotate({rotate}deg); }}
+                    [data-element-id="{el.get('id', '')}"]:hover .img-hover-overlay {{ opacity: {image_styles.get('hoverOverlayOpacity', 1)}; }}'''
             hover = el.get('hoverStyles')
             if hover:
                 hover_rules = []
@@ -692,6 +744,14 @@ def compile_layout_to_html(site, page, pages_list):
         .site-builder-btn:active {{
             transform: translateY(0);
         }}
+
+        .image-frame {{ position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: inherit; }}
+        .image-media {{ width: 100%; height: 100%; display: block; border-radius: inherit; }}
+        .img-hover-overlay {{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:12px; text-align:center; font-weight:600; opacity:0; pointer-events:none; transition:opacity .3s ease; border-radius:inherit; }}
+        .site-search {{ position:relative; width:100%; height:100%; display:flex; align-items:center; }}
+        .site-search span {{ position:absolute; left:11px; opacity:.65; pointer-events:none; }}
+        .site-search input {{ width:100%; height:100%; padding:10px 12px 10px 34px; border:0; border-radius:inherit; background:transparent; color:inherit; font:inherit; outline:0; }}
+        .search-match {{ outline:3px solid var(--primary) !important; outline-offset:3px; box-shadow:0 0 0 6px rgba(99,102,241,.18) !important; }}
         
         /* Navigation active indicator */
         .nav-link.active {{
@@ -882,6 +942,25 @@ def compile_layout_to_html(site, page, pages_list):
                 const dest = targetPage.slug === 'home' ? 'index.html' : targetPage.slug + '.html';
                 window.location.href = dest;
             }}
+        }};
+
+        // Live site search: matching content remains visible, is highlighted, and
+        // the viewport follows the first match as the visitor types.
+        window.runSiteSearch = function(query) {{
+            const q = (query || '').trim().toLowerCase();
+            const elements = document.querySelectorAll('.element-wrapper');
+            let firstMatch = null;
+            elements.forEach(el => {{
+                el.classList.remove('search-match');
+                if (!q || el.querySelector('.site-search')) return;
+                const image = el.querySelector('img');
+                const haystack = [el.innerText, image && image.alt, el.dataset.elementId].filter(Boolean).join(' ').toLowerCase();
+                if (haystack.includes(q)) {{
+                    el.classList.add('search-match');
+                    if (!firstMatch) firstMatch = el;
+                }}
+            }});
+            if (firstMatch) firstMatch.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
         }};
 
         // Media Slider Interaction Logic (Supports Multiple Sliders & 0-indexed loop)
