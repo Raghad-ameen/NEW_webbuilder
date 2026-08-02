@@ -507,6 +507,8 @@ function Builder() {
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [activeFormEl, setActiveFormEl] = useState(null);
+  const [activeDrawerEl, setActiveDrawerEl] = useState(null);
+  const [activeModalEl, setActiveModalEl] = useState(null);
   const viewportRef = useRef(null);
   
   const [history, setHistory] = useState([]);
@@ -2109,6 +2111,36 @@ function Builder() {
           } else if (type === 'form') {
             wrapStart = `<div onclick="openContactFormModal()" style="cursor: pointer; width: 100%; height: 100%;">`;
             wrapEnd = `</div>`;
+          } else if (type === 'drawer') {
+            const encodedAction = encodeURIComponent(JSON.stringify(el.action));
+            wrapStart = `<div onclick="openSiteDrawer('${encodedAction}')" style="cursor: pointer; width: 100%; height: 100%;">`;
+            wrapEnd = `</div>`;
+          } else if (type === 'popup_modal') {
+            const encodedAction = encodeURIComponent(JSON.stringify(el.action));
+            wrapStart = `<div onclick="openSiteModal('${encodedAction}')" style="cursor: pointer; width: 100%; height: 100%;">`;
+            wrapEnd = `</div>`;
+          } else if (type === 'toast') {
+            const encodedAction = encodeURIComponent(JSON.stringify(el.action));
+            wrapStart = `<div onclick="showSiteToast('${encodedAction}')" style="cursor: pointer; width: 100%; height: 100%;">`;
+            wrapEnd = `</div>`;
+          } else if (type === 'copy_text') {
+            const encodedText = encodeURIComponent(el.action.copyText || '');
+            wrapStart = `<div onclick="copySiteText('${encodedText}')" style="cursor: pointer; width: 100%; height: 100%;">`;
+            wrapEnd = `</div>`;
+          } else if (type === 'scroll_top') {
+            wrapStart = `<div onclick="window.scrollTo({top: 0, behavior: 'smooth'})" style="cursor: pointer; width: 100%; height: 100%;">`;
+            wrapEnd = `</div>`;
+          } else if (type === 'toggle_theme') {
+            wrapStart = `<div onclick="document.body.classList.toggle('dark-mode')" style="cursor: pointer; width: 100%; height: 100%;">`;
+            wrapEnd = `</div>`;
+          } else if (type === 'confetti') {
+            wrapStart = `<div onclick="fireSiteConfetti()" style="cursor: pointer; width: 100%; height: 100%;">`;
+            wrapEnd = `</div>`;
+          } else if (type === 'toggle_element') {
+            const tid = el.action.toggleTargetId || '';
+            const beh = el.action.toggleBehavior || 'toggle';
+            wrapStart = `<div onclick="toggleSiteElement('${tid}', '${beh}')" style="cursor: pointer; width: 100%; height: 100%;">`;
+            wrapEnd = `</div>`;
           }
         }
 
@@ -2177,6 +2209,203 @@ function Builder() {
           }
           function closeContactFormModal() {
             document.getElementById('contact-modal').classList.remove('active');
+          }
+
+          function openSiteDrawer(cfgEncoded) {
+            try {
+              var cfg = JSON.parse(decodeURIComponent(cfgEncoded));
+              var side = cfg.drawerSide || 'right';
+              var width = cfg.drawerWidth || '380px';
+              var bg = cfg.drawerBg || '#1e293b';
+              var textColor = cfg.drawerTextColor || '#f1f5f9';
+              var title = cfg.drawerTitle || 'Side Panel';
+              var items = cfg.drawerItems || [
+                { id: 1, type: 'text', content: 'Welcome to the side panel!' },
+                { id: 2, type: 'divider', content: '' },
+                { id: 3, type: 'link', content: 'Home | /' },
+                { id: 4, type: 'link', content: 'Contact Us | /contact' }
+              ];
+
+              var existingPanel = document.getElementById('site-drawer-panel');
+              if (existingPanel) existingPanel.remove();
+              var existingBackdrop = document.getElementById('site-drawer-backdrop');
+              if (existingBackdrop) existingBackdrop.remove();
+
+              var backdrop = document.createElement('div');
+              backdrop.id = 'site-drawer-backdrop';
+              backdrop.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.5);z-index:99990;backdrop-filter:blur(6px);transition:opacity 0.25s;';
+
+              var panel = document.createElement('div');
+              panel.id = 'site-drawer-panel';
+              var sideStyle = side === 'left' ? 'left:0;' : 'right:0;';
+              var boxShadow = side === 'left' ? '10px 0 60px rgba(0,0,0,0.5)' : '-10px 0 60px rgba(0,0,0,0.5)';
+              panel.style.cssText = 'position:fixed;top:0;' + sideStyle + 'width:' + width + ';max-width:100vw;height:100vh;background:' + bg + ';color:' + textColor + ';z-index:99991;display:flex;flex-direction:column;box-shadow:' + boxShadow + ';font-family:sans-serif;box-sizing:border-box;';
+
+              backdrop.onclick = function() {
+                panel.remove();
+                backdrop.remove();
+              };
+
+              var headerHtml = '<div style="display:flex;justify-content:space-between;align-items:center;padding:20px 24px;border-bottom:1px solid rgba(255,255,255,0.1);"><h2 style="margin:0;font-size:18px;font-weight:700;">' + title + '</h2><button id="close-drawer-btn" style="background:rgba(255,255,255,0.1);border:none;color:' + textColor + ';width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;">✕</button></div>';
+
+              var bodyHtml = '<div style="flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:12px;">';
+              items.forEach(function(item) {
+                var s = item.styles || {};
+                function toCss(styleObj) {
+                  return Object.keys(styleObj).map(function(k) {
+                    var prop = k.replace(/([A-Z])/g, function(m) { return '-' + m.toLowerCase(); });
+                    return prop + ':' + styleObj[k];
+                  }).join(';');
+                }
+
+                if (item.type === 'spacer') {
+                  var h = s.height || '24px';
+                  bodyHtml += '<div style="height:' + h + ';flex-shrink:0;"></div>';
+                } else if (item.type === 'divider') {
+                  var divStyle = 'border:none;border-top:' + (s.borderTopWidth || '1px') + ' solid ' + (s.borderColor || 'rgba(255,255,255,0.12)') + ';margin:8px 0;';
+                  bodyHtml += '<hr style="' + divStyle + '" />';
+                } else if (item.type === 'image') {
+                  var imgStyle = 'width:100%;object-fit:' + (s.objectFit || 'cover') + ';border-radius:' + (s.borderRadius || '8px') + ';max-height:' + (s.maxHeight || '240px') + ';display:block;';
+                  bodyHtml += '<img src="' + (item.content || '') + '" style="' + imgStyle + '" />';
+                } else if (item.type === 'heading') {
+                  var hStyle = 'margin:0;font-size:' + (s.fontSize || '20px') + ';font-weight:' + (s.fontWeight || '700') + ';color:' + (s.color || textColor) + ';text-align:' + (s.textAlign || 'left') + ';line-height:' + (s.lineHeight || '1.3') + ';';
+                  bodyHtml += '<h2 style="' + hStyle + '">' + (item.content || '') + '</h2>';
+                } else if (item.type === 'link') {
+                  var parts = (item.content || '').split('|');
+                  var label = parts[0] ? parts[0].trim() : 'Link Item';
+                  var url = parts[1] ? parts[1].trim() : '#';
+                  var linkStyle = 'display:flex;align-items:center;justify-content:space-between;padding:' + (s.padding || '12px 16px') + ';border-radius:' + (s.borderRadius || '8px') + ';background:' + (s.background || 'rgba(255,255,255,0.06)') + ';color:' + (s.color || textColor) + ';text-decoration:none;font-weight:' + (s.fontWeight || '500') + ';font-size:' + (s.fontSize || '14px') + ';';
+                  bodyHtml += '<a href="' + url + '" style="' + linkStyle + '"><span>' + label + '</span><span>→</span></a>';
+                } else if (item.type === 'button') {
+                  var btnStyle = 'width:100%;padding:' + (s.padding || '12px 16px') + ';border-radius:' + (s.borderRadius || '8px') + ';background:' + (s.background || '#6366f1') + ';color:' + (s.color || '#fff') + ';border:none;font-weight:' + (s.fontWeight || '600') + ';font-size:' + (s.fontSize || '14px') + ';cursor:pointer;';
+                  var btnTag = item.href ? '<a href="' + item.href + '" style="' + btnStyle + 'text-decoration:none;display:block;text-align:center;">' + (item.content || 'Click Me') + '</a>' : '<button style="' + btnStyle + '">' + (item.content || 'Click Me') + '</button>';
+                  bodyHtml += btnTag;
+                } else {
+                  // text
+                  var pStyle = 'margin:0;font-size:' + (s.fontSize || '15px') + ';line-height:' + (s.lineHeight || '1.6') + ';color:' + (s.color || textColor) + ';font-weight:' + (s.fontWeight || '400') + ';text-align:' + (s.textAlign || 'left') + ';opacity:0.9;';
+                  bodyHtml += '<p style="' + pStyle + '">' + (item.content || '') + '</p>';
+                }
+              });
+              bodyHtml += '</div>';
+
+              panel.innerHTML = headerHtml + bodyHtml;
+              document.body.appendChild(backdrop);
+              document.body.appendChild(panel);
+
+              document.getElementById('close-drawer-btn').onclick = function() {
+                panel.remove();
+                backdrop.remove();
+              };
+            } catch(err) {
+              console.error("Error opening drawer:", err);
+            }
+          }
+
+          function openSiteModal(cfgEncoded) {
+            try {
+              var cfg = JSON.parse(decodeURIComponent(cfgEncoded));
+              var existingModal = document.getElementById('site-modal-backdrop');
+              if (existingModal) existingModal.remove();
+
+              var backdrop = document.createElement('div');
+              backdrop.id = 'site-modal-backdrop';
+              backdrop.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.6);z-index:99992;display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(8px);font-family:sans-serif;box-sizing:border-box;';
+              backdrop.onclick = function(e) {
+                if (e.target === backdrop) backdrop.remove();
+              };
+
+              var modal = document.createElement('div');
+              modal.style.cssText = 'background:' + (cfg.modalBg || '#1e293b') + ';border-radius:16px;padding:32px;max-width:480px;width:100%;color:#f1f5f9;box-shadow:0 30px 80px rgba(0,0,0,0.6);position:relative;';
+
+              var closeBtn = '<button id="close-modal-btn" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.1);border:none;color:#f1f5f9;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;">✕</button>';
+              var imgHtml = cfg.modalImage ? '<img src="' + cfg.modalImage + '" style="width:100%;border-radius:10px;margin-bottom:20px;max-height:200px;object-fit:cover;" />' : '';
+              var titleHtml = '<h2 style="margin:0 0 12px;font-size:22px;font-weight:700;">' + (cfg.modalTitle || 'Special Announcement') + '</h2>';
+              var bodyHtml = '<p style="margin:0 0 24px;font-size:15px;line-height:1.7;opacity:0.85;">' + (cfg.modalContent || 'Modal description content.') + '</p>';
+              var actionBtn = '<button id="close-modal-action-btn" style="padding:11px 24px;background:#6366f1;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:14px;">' + (cfg.modalCloseLabel || 'Close') + '</button>';
+
+              modal.innerHTML = closeBtn + imgHtml + titleHtml + bodyHtml + actionBtn;
+              backdrop.appendChild(modal);
+              document.body.appendChild(backdrop);
+
+              document.getElementById('close-modal-btn').onclick = function() { backdrop.remove(); };
+              document.getElementById('close-modal-action-btn').onclick = function() { backdrop.remove(); };
+            } catch(err) {}
+          }
+
+          function showSiteToast(cfgEncoded) {
+            try {
+              var cfg = JSON.parse(decodeURIComponent(cfgEncoded));
+              var msg = cfg.toastMessage || 'Action completed successfully!';
+              var pos = cfg.toastPosition || 'bottom-right';
+              var style = cfg.toastStyle || 'info';
+              var dur = cfg.toastDuration || 3000;
+              var styleMap = {
+                info: { bg: '#3b82f6', icon: 'ℹ️' },
+                success: { bg: '#22c55e', icon: '✅' },
+                error: { bg: '#ef4444', icon: '❌' },
+                warning: { bg: '#f59e0b', icon: '⚠️' },
+                dark: { bg: '#1e293b', icon: '🌑' }
+              };
+              var t = styleMap[style] || styleMap.info;
+              var posStyle = {
+                'top-left': 'top:24px;left:24px',
+                'top-center': 'top:24px;left:50%;transform:translateX(-50%)',
+                'top-right': 'top:24px;right:24px',
+                'bottom-left': 'bottom:24px;left:24px',
+                'bottom-center': 'bottom:24px;left:50%;transform:translateX(-50%)',
+                'bottom-right': 'bottom:24px;right:24px'
+              }[pos] || 'bottom:24px;right:24px';
+
+              var div = document.createElement('div');
+              div.style.cssText = 'position:fixed;' + posStyle + ';background:' + t.bg + ';color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:500;z-index:99999;display:flex;align-items:center;gap:10px;box-shadow:0 10px 40px rgba(0,0,0,0.4);max-width:380px;transition:all 0.3s;';
+              div.innerHTML = '<span>' + t.icon + '</span><span>' + msg + '</span>';
+              document.body.appendChild(div);
+              setTimeout(function() {
+                div.style.opacity = '0';
+                setTimeout(function() { div.remove(); }, 300);
+              }, dur);
+            } catch(err) {}
+          }
+
+          function copySiteText(textEncoded) {
+            try {
+              var text = decodeURIComponent(textEncoded);
+              navigator.clipboard.writeText(text).then(function() {
+                var d = document.createElement('div');
+                d.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#22c55e;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:99999;box-shadow:0 8px 30px rgba(0,0,0,0.3);';
+                d.textContent = '✅ Copied to clipboard!';
+                document.body.appendChild(d);
+                setTimeout(function() { d.remove(); }, 2000);
+              });
+            } catch(err) {}
+          }
+
+          function fireSiteConfetti() {
+            var colors = ['#6366f1','#ec4899','#f59e0b','#22c55e','#3b82f6','#a855f7','#ef4444'];
+            for (var i = 0; i < 100; i++) {
+              (function() {
+                var p = document.createElement('div');
+                var size = Math.random() * 10 + 5;
+                p.style.cssText = 'position:fixed;top:-20px;left:' + (Math.random() * 100) + 'vw;width:' + size + 'px;height:' + size + 'px;background:' + colors[Math.floor(Math.random() * colors.length)] + ';border-radius:' + (Math.random() > 0.5 ? '50%' : '2px') + ';z-index:99999;pointer-events:none;animation:confetti-fall ' + (Math.random() * 2 + 1.5) + 's ease-in ' + (Math.random() * 1) + 's forwards;';
+                document.body.appendChild(p);
+                setTimeout(function() { p.remove(); }, 4000);
+              })();
+            }
+            if (!document.getElementById('confetti-style-iframe')) {
+              var s = document.createElement('style');
+              s.id = 'confetti-style-iframe';
+              s.textContent = '@keyframes confetti-fall{0%{transform:translateY(0) rotate(0deg);opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}';
+              document.head.appendChild(s);
+            }
+          }
+
+          function toggleSiteElement(targetId, behavior) {
+            var target = document.querySelector('[data-element-id="' + targetId + '"]') || document.getElementById(targetId);
+            if (target) {
+              if (behavior === 'show') target.style.display = '';
+              else if (behavior === 'hide') target.style.display = 'none';
+              else target.style.display = target.style.display === 'none' ? '' : 'none';
+            }
           }
           async function submitContactForm(event) {
             event.preventDefault();
@@ -3752,7 +3981,96 @@ function Builder() {
       </div>
     );
 
+    const executeElementAction = (targetEl) => {
+      if (!targetEl || !targetEl.action || !targetEl.action.type || targetEl.action.type === 'none') return;
+      const { type, value, subject, openInNewTab } = targetEl.action;
+
+      if (type === 'drawer') {
+        setActiveDrawerEl(targetEl);
+      } else if (type === 'popup_modal') {
+        setActiveModalEl(targetEl);
+      } else if (type === 'form') {
+        setActiveFormEl(targetEl);
+      } else if (type === 'url') {
+        if (value) {
+          if (openInNewTab) window.open(value, '_blank');
+          else window.location.href = value;
+        }
+      } else if (type === 'page') {
+        const targetPage = pages.find(p => p.slug === value);
+        if (targetPage) handleSwitchPage(targetPage);
+      } else if (type === 'anchor') {
+        const sectionEl = document.getElementById(value);
+        if (sectionEl) sectionEl.scrollIntoView({ behavior: 'smooth' });
+      } else if (type === 'email') {
+        window.location.href = `mailto:${value || ''}${subject ? `?subject=${encodeURIComponent(subject)}` : ''}`;
+      } else if (type === 'toast') {
+        const msg = targetEl.action.toastMessage || 'Action completed successfully!';
+        const pos = targetEl.action.toastPosition || 'bottom-right';
+        const style = targetEl.action.toastStyle || 'info';
+        const dur = targetEl.action.toastDuration || 3000;
+        const styleMap = {
+          info: { bg: '#3b82f6', icon: 'ℹ️' },
+          success: { bg: '#22c55e', icon: '✅' },
+          error: { bg: '#ef4444', icon: '❌' },
+          warning: { bg: '#f59e0b', icon: '⚠️' },
+          dark: { bg: '#1e293b', icon: '🌑' }
+        };
+        const t = styleMap[style] || styleMap.info;
+        const posStyle = {
+          'top-left': 'top:24px;left:24px',
+          'top-center': 'top:24px;left:50%;transform:translateX(-50%)',
+          'top-right': 'top:24px;right:24px',
+          'bottom-left': 'bottom:24px;left:24px',
+          'bottom-center': 'bottom:24px;left:50%;transform:translateX(-50%)',
+          'bottom-right': 'bottom:24px;right:24px'
+        }[pos] || 'bottom:24px;right:24px';
+        const div = document.createElement('div');
+        div.style.cssText = `position:fixed;${posStyle};background:${t.bg};color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:500;z-index:99999;display:flex;align-items:center;gap:10px;box-shadow:0 10px 40px rgba(0,0,0,0.4);max-width:380px;transition:all 0.3s;pointer-events:auto;`;
+        div.innerHTML = `<span>${t.icon}</span><span>${msg}</span>`;
+        document.body.appendChild(div);
+        setTimeout(() => { div.style.opacity = '0'; setTimeout(() => div.remove(), 300); }, dur);
+      } else if (type === 'copy_text') {
+        navigator.clipboard.writeText(targetEl.action.copyText || '').then(() => {
+          const d = document.createElement('div');
+          d.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#22c55e;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:99999;box-shadow:0 8px 30px rgba(0,0,0,0.3);';
+          d.textContent = '✅ Copied to clipboard!';
+          document.body.appendChild(d);
+          setTimeout(() => d.remove(), 2000);
+        });
+      } else if (type === 'scroll_top') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else if (type === 'toggle_theme') {
+        document.documentElement.classList.toggle('dark-mode');
+      } else if (type === 'confetti') {
+        const colors = ['#6366f1','#ec4899','#f59e0b','#22c55e','#3b82f6','#a855f7','#ef4444'];
+        for (let i = 0; i < 100; i++) {
+          const p = document.createElement('div');
+          const size = Math.random() * 10 + 5;
+          p.style.cssText = `position:fixed;top:-20px;left:${Math.random()*100}vw;width:${size}px;height:${size}px;background:${colors[Math.floor(Math.random()*colors.length)]};border-radius:${Math.random()>0.5?'50%':'2px'};z-index:99999;pointer-events:none;`;
+          p.style.animation = `confetti-fall ${Math.random()*2+1.5}s ease-in ${Math.random()*1}s forwards`;
+          document.body.appendChild(p);
+          setTimeout(() => p.remove(), 4000);
+        }
+      } else if (type === 'toggle_element') {
+        const target = document.querySelector(`[data-element-id="${targetEl.action.toggleTargetId}"]`) || document.getElementById(targetEl.action.toggleTargetId);
+        if (target) {
+          const beh = targetEl.action.toggleBehavior || 'toggle';
+          if (beh === 'show') target.style.display = '';
+          else if (beh === 'hide') target.style.display = 'none';
+          else target.style.display = target.style.display === 'none' ? '' : 'none';
+        }
+      }
+    };
+
     const handleElClick = (e) => {
+      if (isPreview) {
+        if (el.action && el.action.type && el.action.type !== 'none') {
+          e.stopPropagation();
+          executeElementAction(el);
+          return;
+        }
+      }
       handleElementClick(e, el.id);
     };
 
@@ -3775,42 +4093,17 @@ function Builder() {
       if (!isPreview || !el.action || el.action.type === 'none') {
         return content;
       }
-      if (el.action.type === 'url') {
-        return (
-          <a href={el.action.value || '#'} target={el.action.openInNewTab ? '_blank' : '_self'} rel="noopener noreferrer" style={{ textDecoration: 'none', color: 'inherit', display: 'block', width: '100%', height: '100%' }}>
-            {content}
-          </a>
-        );
-      }
-      if (el.action.type === 'page') {
-        return (
-          <a href="#" onClick={(e) => { e.preventDefault(); const targetPage = pages.find(p => p.slug === el.action.value); if (targetPage) handleSwitchPage(targetPage); }} style={{ textDecoration: 'none', color: 'inherit', display: 'block', width: '100%', height: '100%' }}>
-            {content}
-          </a>
-        );
-      }
-      if (el.action.type === 'anchor') {
-        return (
-          <a href={`#${el.action.value}`} onClick={(e) => { e.preventDefault(); const sectionEl = document.getElementById(el.action.value); if (sectionEl) sectionEl.scrollIntoView({ behavior: 'smooth' }); }} style={{ textDecoration: 'none', color: 'inherit', display: 'block', width: '100%', height: '100%' }}>
-            {content}
-          </a>
-        );
-      }
-      if (el.action.type === 'email') {
-        return (
-          <a href={`mailto:${el.action.value}${el.action.subject ? `?subject=${encodeURIComponent(el.action.subject)}` : ''}`} style={{ textDecoration: 'none', color: 'inherit', display: 'block', width: '100%', height: '100%' }}>
-            {content}
-          </a>
-        );
-      }
-      if (el.action.type === 'form') {
-        return (
-          <div onClick={(e) => { e.stopPropagation(); setActiveFormEl(el); }} style={{ cursor: 'pointer', width: '100%', height: '100%' }}>
-            {content}
-          </div>
-        );
-      }
-      return content;
+      return (
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            executeElementAction(el);
+          }}
+          style={{ cursor: 'pointer', width: '100%', height: '100%' }}
+        >
+          {content}
+        </div>
+      );
     };
 
     const wrapWithRnd = (elementInnerContent, inlineStyles = {}) => {
@@ -7672,12 +7965,28 @@ function Builder() {
                       onChange={(e) => updateSelectedElement({ action: { type: e.target.value, value: '' } })}
                     >
                       <option value="none">None (Static)</option>
-                      <option value="url">External URL</option>
-                      <option value="page">Internal Page</option>
-                      <option value="anchor">Scroll to Anchor (#id)</option>
-                      <option value="email">Email (mailto:)</option>
-                      <option value="form">Open Contact Form Modal</option>
-                      <option value="submit_inputs">Submit Inputs to Backend</option>
+                      <optgroup label="── Navigation ──">
+                        <option value="url">🔗 External URL</option>
+                        <option value="page">📄 Internal Page</option>
+                        <option value="anchor">⚓ Scroll to Anchor (#id)</option>
+                        <option value="email">✉️ Email (mailto:)</option>
+                      </optgroup>
+                      <optgroup label="── Overlays & Drawers ──">
+                        <option value="drawer">🗂️ Open Side Drawer</option>
+                        <option value="popup_modal">🪟 Open Custom Modal</option>
+                        <option value="form">📬 Open Contact Form Modal</option>
+                      </optgroup>
+                      <optgroup label="── Dynamic Interactions ──">
+                        <option value="toast">🔔 Show Toast Notification</option>
+                        <option value="copy_text">📋 Copy Text to Clipboard</option>
+                        <option value="toggle_element">👁️ Show / Hide an Element</option>
+                        <option value="scroll_top">⬆️ Scroll to Top</option>
+                        <option value="toggle_theme">🌗 Toggle Dark / Light Theme</option>
+                        <option value="confetti">🎉 Confetti Celebration</option>
+                      </optgroup>
+                      <optgroup label="── Forms ──">
+                        <option value="submit_inputs">📤 Submit Inputs to Backend</option>
+                      </optgroup>
                     </select>
                   </div>
 
@@ -7773,6 +8082,569 @@ function Builder() {
                   {selectedElement.action?.type === 'form' && (
                     <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
                       When clicked, a contact form modal pop-up will overlay the page.
+                    </div>
+                  )}
+
+                  {/* ── DRAWER CONFIG ── */}
+                  {selectedElement.action?.type === 'drawer' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div>
+                        <label>Drawer Alignment / Side</label>
+                        <select
+                          value={selectedElement.action?.drawerSide || 'right'}
+                          onChange={(e) => updateSelectedElement({ action: { drawerSide: e.target.value } })}
+                        >
+                          <option value="right">Right Side Drawer →</option>
+                          <option value="left">← Left Side Drawer</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label>Drawer Width</label>
+                        <select
+                          value={selectedElement.action?.drawerWidth || '380px'}
+                          onChange={(e) => updateSelectedElement({ action: { drawerWidth: e.target.value } })}
+                        >
+                          <option value="320px">Compact (320px)</option>
+                          <option value="380px">Standard (380px)</option>
+                          <option value="480px">Wide (480px)</option>
+                          <option value="600px">Extra Wide (600px)</option>
+                          <option value="100vw">Full Screen Overlay (100%)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label>Background Color</label>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input
+                            type="color"
+                            value={selectedElement.action?.drawerBg || '#1e293b'}
+                            onChange={(e) => updateSelectedElement({ action: { drawerBg: e.target.value } })}
+                            style={{ width: '44px', height: '36px', padding: '2px', borderRadius: '6px', cursor: 'pointer', background: 'none', border: '1px solid var(--border)' }}
+                          />
+                          <input
+                            type="text"
+                            value={selectedElement.action?.drawerBg || '#1e293b'}
+                            onChange={(e) => updateSelectedElement({ action: { drawerBg: e.target.value } })}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label>Text Color</label>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input
+                            type="color"
+                            value={selectedElement.action?.drawerTextColor || '#f1f5f9'}
+                            onChange={(e) => updateSelectedElement({ action: { drawerTextColor: e.target.value } })}
+                            style={{ width: '44px', height: '36px', padding: '2px', borderRadius: '6px', cursor: 'pointer', background: 'none', border: '1px solid var(--border)' }}
+                          />
+                          <input
+                            type="text"
+                            value={selectedElement.action?.drawerTextColor || '#f1f5f9'}
+                            onChange={(e) => updateSelectedElement({ action: { drawerTextColor: e.target.value } })}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label>Drawer Title</label>
+                        <input
+                          type="text"
+                          value={selectedElement.action?.drawerTitle ?? 'Side Panel'}
+                          onChange={(e) => updateSelectedElement({ action: { drawerTitle: e.target.value } })}
+                          placeholder="Side Panel Title"
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ marginBottom: '6px', display: 'block', fontWeight: 'bold' }}>Drawer Content Elements</label>
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '10px' }}>
+                          Add text, images, links, buttons, or dividers. Fully customize each element's look.
+                        </span>
+
+                        {(selectedElement.action?.drawerItems || [
+                          { id: 1, type: 'text', content: 'Welcome to the side panel!', styles: {} },
+                          { id: 2, type: 'divider', content: '' },
+                          { id: 3, type: 'link', content: 'Home | /', styles: {} },
+                          { id: 4, type: 'link', content: 'Contact Us | /contact', styles: {} }
+                        ]).map((item, idx) => {
+                          const getItems = () => selectedElement.action?.drawerItems || [
+                            { id: 1, type: 'text', content: 'Welcome to the side panel!', styles: {} },
+                            { id: 2, type: 'divider', content: '' },
+                            { id: 3, type: 'link', content: 'Home | /', styles: {} },
+                            { id: 4, type: 'link', content: 'Contact Us | /contact', styles: {} }
+                          ];
+                          const updateItem = (patch) => {
+                            const updated = [...getItems()];
+                            updated[idx] = { ...updated[idx], ...patch };
+                            updateSelectedElement({ action: { drawerItems: updated } });
+                          };
+                          const updateItemStyle = (stylePatch) => {
+                            const updated = [...getItems()];
+                            updated[idx] = { ...updated[idx], styles: { ...(updated[idx].styles || {}), ...stylePatch } };
+                            updateSelectedElement({ action: { drawerItems: updated } });
+                          };
+                          const s = item.styles || {};
+
+                          return (
+                            <div key={item.id || idx} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '12px', marginBottom: '10px', border: '1px solid var(--border)' }}>
+                              {/* Row 1: Type selector + Delete */}
+                              <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', alignItems: 'center' }}>
+                                <select
+                                  value={item.type}
+                                  onChange={(e) => updateItem({ type: e.target.value, content: '' })}
+                                  style={{ flex: 1, fontSize: '11px' }}
+                                >
+                                  <option value="text">📝 Text / Paragraph</option>
+                                  <option value="heading">🔤 Heading</option>
+                                  <option value="image">🖼️ Image</option>
+                                  <option value="link">🔗 Navigation Link</option>
+                                  <option value="button">🔘 Button</option>
+                                  <option value="divider">➖ Divider</option>
+                                  <option value="spacer">⬜ Spacer</option>
+                                </select>
+                                <button
+                                  onClick={() => {
+                                    const updated = getItems().filter((_, i) => i !== idx);
+                                    updateSelectedElement({ action: { drawerItems: updated } });
+                                  }}
+                                  style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '12px', flexShrink: 0 }}
+                                  title="Remove item"
+                                >✕</button>
+                              </div>
+
+                              {/* IMAGE */}
+                              {item.type === 'image' && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  {item.content && (
+                                    <img src={item.content} alt="" style={{ width: '100%', maxHeight: '100px', objectFit: 'cover', borderRadius: '6px', marginBottom: '4px' }} />
+                                  )}
+                                  <label style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>📁 Upload from Device</label>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    style={{ fontSize: '11px' }}
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      const reader = new FileReader();
+                                      reader.onload = (ev) => updateItem({ content: ev.target.result });
+                                      reader.readAsDataURL(file);
+                                    }}
+                                  />
+                                  <label style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '4px' }}>🔗 Or Paste Image URL</label>
+                                  <input
+                                    type="text"
+                                    value={item.content?.startsWith('data:') ? '' : (item.content || '')}
+                                    onChange={(e) => updateItem({ content: e.target.value })}
+                                    placeholder="https://example.com/photo.jpg"
+                                    style={{ fontSize: '11px' }}
+                                  />
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '4px' }}>
+                                    <div>
+                                      <label style={{ fontSize: '10px' }}>Border Radius</label>
+                                      <select value={s.borderRadius || '8px'} onChange={(e) => updateItemStyle({ borderRadius: e.target.value })} style={{ fontSize: '10px' }}>
+                                        <option value="0px">None</option>
+                                        <option value="4px">Small</option>
+                                        <option value="8px">Medium</option>
+                                        <option value="16px">Large</option>
+                                        <option value="50%">Circle</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label style={{ fontSize: '10px' }}>Object Fit</label>
+                                      <select value={s.objectFit || 'cover'} onChange={(e) => updateItemStyle({ objectFit: e.target.value })} style={{ fontSize: '10px' }}>
+                                        <option value="cover">Cover</option>
+                                        <option value="contain">Contain</option>
+                                        <option value="fill">Fill</option>
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: '10px' }}>Max Height (px)</label>
+                                    <input type="number" value={parseInt(s.maxHeight) || 240} onChange={(e) => updateItemStyle({ maxHeight: e.target.value + 'px' })} style={{ fontSize: '11px' }} />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* TEXT or HEADING */}
+                              {(item.type === 'text' || item.type === 'heading') && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  <textarea
+                                    value={item.content || ''}
+                                    onChange={(e) => updateItem({ content: e.target.value })}
+                                    rows={3}
+                                    placeholder={item.type === 'heading' ? 'Heading text...' : 'Paragraph text...'}
+                                    style={{ fontSize: '11px', resize: 'vertical', padding: '6px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text)' }}
+                                  />
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                                    <div>
+                                      <label style={{ fontSize: '10px' }}>Font Size</label>
+                                      <input type="text" value={s.fontSize || (item.type === 'heading' ? '20px' : '14px')} onChange={(e) => updateItemStyle({ fontSize: e.target.value })} placeholder="14px" style={{ fontSize: '11px' }} />
+                                    </div>
+                                    <div>
+                                      <label style={{ fontSize: '10px' }}>Font Weight</label>
+                                      <select value={s.fontWeight || (item.type === 'heading' ? '700' : '400')} onChange={(e) => updateItemStyle({ fontWeight: e.target.value })} style={{ fontSize: '10px' }}>
+                                        <option value="300">Light</option>
+                                        <option value="400">Regular</option>
+                                        <option value="500">Medium</option>
+                                        <option value="600">Semi Bold</option>
+                                        <option value="700">Bold</option>
+                                        <option value="800">Extra Bold</option>
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                    <label style={{ fontSize: '10px', flexShrink: 0 }}>Color</label>
+                                    <input type="color" value={s.color || '#f1f5f9'} onChange={(e) => updateItemStyle({ color: e.target.value })} style={{ width: '36px', height: '28px', padding: '1px', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer', background: 'none' }} />
+                                    <input type="text" value={s.color || '#f1f5f9'} onChange={(e) => updateItemStyle({ color: e.target.value })} style={{ fontSize: '11px', flex: 1 }} />
+                                  </div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                                    <div>
+                                      <label style={{ fontSize: '10px' }}>Text Align</label>
+                                      <select value={s.textAlign || 'left'} onChange={(e) => updateItemStyle({ textAlign: e.target.value })} style={{ fontSize: '10px' }}>
+                                        <option value="left">Left</option>
+                                        <option value="center">Center</option>
+                                        <option value="right">Right</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label style={{ fontSize: '10px' }}>Line Height</label>
+                                      <input type="text" value={s.lineHeight || '1.6'} onChange={(e) => updateItemStyle({ lineHeight: e.target.value })} style={{ fontSize: '11px' }} />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* LINK */}
+                              {item.type === 'link' && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  <label style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Label and URL (format: Label | URL)</label>
+                                  <input type="text" value={item.content || ''} onChange={(e) => updateItem({ content: e.target.value })} placeholder="About Us | /about" style={{ fontSize: '11px' }} />
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                                    <div>
+                                      <label style={{ fontSize: '10px' }}>Font Size</label>
+                                      <input type="text" value={s.fontSize || '14px'} onChange={(e) => updateItemStyle({ fontSize: e.target.value })} style={{ fontSize: '11px' }} />
+                                    </div>
+                                    <div>
+                                      <label style={{ fontSize: '10px' }}>Font Weight</label>
+                                      <select value={s.fontWeight || '500'} onChange={(e) => updateItemStyle({ fontWeight: e.target.value })} style={{ fontSize: '10px' }}>
+                                        <option value="400">Regular</option>
+                                        <option value="500">Medium</option>
+                                        <option value="600">Semi Bold</option>
+                                        <option value="700">Bold</option>
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                    <label style={{ fontSize: '10px', flexShrink: 0 }}>Text Color</label>
+                                    <input type="color" value={s.color || '#f1f5f9'} onChange={(e) => updateItemStyle({ color: e.target.value })} style={{ width: '36px', height: '28px', padding: '1px', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer', background: 'none' }} />
+                                    <input type="text" value={s.color || '#f1f5f9'} onChange={(e) => updateItemStyle({ color: e.target.value })} style={{ fontSize: '11px', flex: 1 }} />
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                    <label style={{ fontSize: '10px', flexShrink: 0 }}>Bg Color</label>
+                                    <input type="color" value={s.background || 'rgba(255,255,255,0.06)'} onChange={(e) => updateItemStyle({ background: e.target.value })} style={{ width: '36px', height: '28px', padding: '1px', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer', background: 'none' }} />
+                                    <input type="text" value={s.background || 'rgba(255,255,255,0.06)'} onChange={(e) => updateItemStyle({ background: e.target.value })} style={{ fontSize: '11px', flex: 1 }} />
+                                  </div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                                    <div>
+                                      <label style={{ fontSize: '10px' }}>Border Radius</label>
+                                      <input type="text" value={s.borderRadius || '8px'} onChange={(e) => updateItemStyle({ borderRadius: e.target.value })} style={{ fontSize: '11px' }} />
+                                    </div>
+                                    <div>
+                                      <label style={{ fontSize: '10px' }}>Padding</label>
+                                      <input type="text" value={s.padding || '12px 16px'} onChange={(e) => updateItemStyle({ padding: e.target.value })} style={{ fontSize: '11px' }} />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* BUTTON */}
+                              {item.type === 'button' && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  <label style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Button Label</label>
+                                  <input type="text" value={item.content || ''} onChange={(e) => updateItem({ content: e.target.value })} placeholder="Click Me" style={{ fontSize: '11px' }} />
+                                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                    <label style={{ fontSize: '10px', flexShrink: 0 }}>Bg Color</label>
+                                    <input type="color" value={s.background || '#6366f1'} onChange={(e) => updateItemStyle({ background: e.target.value })} style={{ width: '36px', height: '28px', padding: '1px', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer', background: 'none' }} />
+                                    <input type="text" value={s.background || '#6366f1'} onChange={(e) => updateItemStyle({ background: e.target.value })} style={{ fontSize: '11px', flex: 1 }} />
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                    <label style={{ fontSize: '10px', flexShrink: 0 }}>Text Color</label>
+                                    <input type="color" value={s.color || '#ffffff'} onChange={(e) => updateItemStyle({ color: e.target.value })} style={{ width: '36px', height: '28px', padding: '1px', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer', background: 'none' }} />
+                                    <input type="text" value={s.color || '#ffffff'} onChange={(e) => updateItemStyle({ color: e.target.value })} style={{ fontSize: '11px', flex: 1 }} />
+                                  </div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                                    <div>
+                                      <label style={{ fontSize: '10px' }}>Border Radius</label>
+                                      <input type="text" value={s.borderRadius || '8px'} onChange={(e) => updateItemStyle({ borderRadius: e.target.value })} style={{ fontSize: '11px' }} />
+                                    </div>
+                                    <div>
+                                      <label style={{ fontSize: '10px' }}>Font Size</label>
+                                      <input type="text" value={s.fontSize || '14px'} onChange={(e) => updateItemStyle({ fontSize: e.target.value })} style={{ fontSize: '11px' }} />
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                                    <div>
+                                      <label style={{ fontSize: '10px' }}>Padding</label>
+                                      <input type="text" value={s.padding || '12px 16px'} onChange={(e) => updateItemStyle({ padding: e.target.value })} style={{ fontSize: '11px' }} />
+                                    </div>
+                                    <div>
+                                      <label style={{ fontSize: '10px' }}>Font Weight</label>
+                                      <select value={s.fontWeight || '600'} onChange={(e) => updateItemStyle({ fontWeight: e.target.value })} style={{ fontSize: '10px' }}>
+                                        <option value="400">Regular</option>
+                                        <option value="500">Medium</option>
+                                        <option value="600">Semi Bold</option>
+                                        <option value="700">Bold</option>
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: '10px' }}>On Click URL (optional)</label>
+                                    <input type="text" value={item.href || ''} onChange={(e) => updateItem({ href: e.target.value })} placeholder="https://..." style={{ fontSize: '11px' }} />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* DIVIDER */}
+                              {item.type === 'divider' && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                                  <div>
+                                    <label style={{ fontSize: '10px' }}>Color</label>
+                                    <input type="color" value={s.borderColor || 'rgba(255,255,255,0.12)'} onChange={(e) => updateItemStyle({ borderColor: e.target.value })} style={{ width: '100%', height: '28px', padding: '1px', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer', background: 'none' }} />
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: '10px' }}>Thickness</label>
+                                    <input type="text" value={s.borderTopWidth || '1px'} onChange={(e) => updateItemStyle({ borderTopWidth: e.target.value })} placeholder="1px" style={{ fontSize: '11px' }} />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* SPACER */}
+                              {item.type === 'spacer' && (
+                                <div>
+                                  <label style={{ fontSize: '10px' }}>Height</label>
+                                  <input type="text" value={s.height || '24px'} onChange={(e) => updateItemStyle({ height: e.target.value })} placeholder="24px" style={{ fontSize: '11px' }} />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {/* Add Item Buttons */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px', marginTop: '4px' }}>
+                          {[
+                            { type: 'text', label: '📝 Text', defaults: { content: 'New text block', styles: {} } },
+                            { type: 'heading', label: '🔤 Heading', defaults: { content: 'Section Heading', styles: { fontSize: '20px', fontWeight: '700' } } },
+                            { type: 'image', label: '🖼️ Image', defaults: { content: '', styles: {} } },
+                            { type: 'link', label: '🔗 Link', defaults: { content: 'Label | /', styles: {} } },
+                            { type: 'button', label: '🔘 Button', defaults: { content: 'Click Me', styles: {} } },
+                            { type: 'divider', label: '➖ Divider', defaults: { content: '', styles: {} } },
+                          ].map(({ type, label, defaults }) => (
+                            <button
+                              key={type}
+                              onClick={() => {
+                                const currentItems = selectedElement.action?.drawerItems || [];
+                                updateSelectedElement({
+                                  action: { drawerItems: [...currentItems, { id: Date.now(), type, ...defaults }] }
+                                });
+                              }}
+                              style={{ padding: '5px 4px', background: 'rgba(99,102,241,0.12)', border: '1px dashed rgba(99,102,241,0.35)', color: '#818cf8', borderRadius: '5px', cursor: 'pointer', fontSize: '10px', fontWeight: '600' }}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setActiveDrawerEl(selectedElement)}
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontWeight: 'bold',
+                          fontSize: '13px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justify: 'center',
+                          gap: '8px',
+                          boxShadow: '0 4px 14px rgba(99,102,241,0.35)',
+                          marginTop: '6px'
+                        }}
+                      >
+                        👁️ Test Open Side Drawer Now
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ── TOAST CONFIG ── */}
+                  {selectedElement.action?.type === 'toast' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div>
+                        <label>Notification Message</label>
+                        <input
+                          type="text"
+                          value={selectedElement.action?.toastMessage || 'Action completed successfully!'}
+                          onChange={(e) => updateSelectedElement({ action: { toastMessage: e.target.value } })}
+                          placeholder="Your message..."
+                        />
+                      </div>
+                      <div>
+                        <label>Toast Style</label>
+                        <select
+                          value={selectedElement.action?.toastStyle || 'info'}
+                          onChange={(e) => updateSelectedElement({ action: { toastStyle: e.target.value } })}
+                        >
+                          <option value="info">ℹ️ Info (Blue)</option>
+                          <option value="success">✅ Success (Green)</option>
+                          <option value="error">❌ Error (Red)</option>
+                          <option value="warning">⚠️ Warning (Yellow)</option>
+                          <option value="dark">🌑 Dark Theme</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label>Screen Position</label>
+                        <select
+                          value={selectedElement.action?.toastPosition || 'bottom-right'}
+                          onChange={(e) => updateSelectedElement({ action: { toastPosition: e.target.value } })}
+                        >
+                          <option value="top-left">Top Left</option>
+                          <option value="top-center">Top Center</option>
+                          <option value="top-right">Top Right</option>
+                          <option value="bottom-left">Bottom Left</option>
+                          <option value="bottom-center">Bottom Center</option>
+                          <option value="bottom-right">Bottom Right</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label>Duration (ms)</label>
+                        <input
+                          type="number"
+                          min="1000"
+                          max="10000"
+                          step="500"
+                          value={selectedElement.action?.toastDuration || 3000}
+                          onChange={(e) => updateSelectedElement({ action: { toastDuration: parseInt(e.target.value) || 3000 } })}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── POPUP MODAL CONFIG ── */}
+                  {selectedElement.action?.type === 'popup_modal' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div>
+                        <label>Modal Title</label>
+                        <input
+                          type="text"
+                          value={selectedElement.action?.modalTitle || 'Special Announcement'}
+                          onChange={(e) => updateSelectedElement({ action: { modalTitle: e.target.value } })}
+                          placeholder="Modal Title"
+                        />
+                      </div>
+                      <div>
+                        <label>Modal Content Body</label>
+                        <textarea
+                          rows={4}
+                          value={selectedElement.action?.modalContent || 'Write your modal description or instructions here.'}
+                          onChange={(e) => updateSelectedElement({ action: { modalContent: e.target.value } })}
+                          placeholder="Write your modal content here..."
+                          style={{ resize: 'vertical' }}
+                        />
+                      </div>
+                      <div>
+                        <label>Banner Image URL (Optional)</label>
+                        <input
+                          type="text"
+                          value={selectedElement.action?.modalImage || ''}
+                          onChange={(e) => updateSelectedElement({ action: { modalImage: e.target.value } })}
+                          placeholder="https://images.unsplash.com/..."
+                        />
+                      </div>
+                      <div>
+                        <label>Close Button Text</label>
+                        <input
+                          type="text"
+                          value={selectedElement.action?.modalCloseLabel || 'Got it!'}
+                          onChange={(e) => updateSelectedElement({ action: { modalCloseLabel: e.target.value } })}
+                          placeholder="Got it!"
+                        />
+                      </div>
+                      <div>
+                        <label>Modal Background Color</label>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input
+                            type="color"
+                            value={selectedElement.action?.modalBg || '#1e293b'}
+                            onChange={(e) => updateSelectedElement({ action: { modalBg: e.target.value } })}
+                            style={{ width: '44px', height: '36px', padding: '2px', borderRadius: '6px', cursor: 'pointer', background: 'none', border: '1px solid var(--border)' }}
+                          />
+                          <input
+                            type="text"
+                            value={selectedElement.action?.modalBg || '#1e293b'}
+                            onChange={(e) => updateSelectedElement({ action: { modalBg: e.target.value } })}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── COPY TEXT CONFIG ── */}
+                  {selectedElement.action?.type === 'copy_text' && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <label>Text Content to Copy</label>
+                      <textarea
+                        rows={3}
+                        value={selectedElement.action?.copyText || ''}
+                        onChange={(e) => updateSelectedElement({ action: { copyText: e.target.value } })}
+                        placeholder="Text to copy to user's clipboard..."
+                        style={{ resize: 'vertical' }}
+                      />
+                    </div>
+                  )}
+
+                  {/* ── TOGGLE ELEMENT CONFIG ── */}
+                  {selectedElement.action?.type === 'toggle_element' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div>
+                        <label>Target Element ID</label>
+                        <input
+                          type="text"
+                          value={selectedElement.action?.toggleTargetId || ''}
+                          onChange={(e) => updateSelectedElement({ action: { toggleTargetId: e.target.value } })}
+                          placeholder="e.g. element_1700000000"
+                        />
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginTop: '4px' }}>
+                          Enter the element ID to toggle visibility.
+                        </span>
+                      </div>
+                      <div>
+                        <label>Behavior</label>
+                        <select
+                          value={selectedElement.action?.toggleBehavior || 'toggle'}
+                          onChange={(e) => updateSelectedElement({ action: { toggleBehavior: e.target.value } })}
+                        >
+                          <option value="toggle">Toggle Visibility (Show/Hide)</option>
+                          <option value="show">Force Show</option>
+                          <option value="hide">Force Hide</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── INFO BOXES FOR SIMPLE INTERACTIONS ── */}
+                  {(selectedElement.action?.type === 'scroll_top' || selectedElement.action?.type === 'toggle_theme' || selectedElement.action?.type === 'confetti') && (
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '12px', padding: '10px', background: 'rgba(99,102,241,0.08)', borderRadius: '8px', border: '1px solid rgba(99,102,241,0.2)' }}>
+                      {selectedElement.action?.type === 'scroll_top' && '⬆️ Smoothly scrolls page back to top when clicked.'}
+                      {selectedElement.action?.type === 'toggle_theme' && '🌗 Toggles between Dark & Light mode when clicked.'}
+                      {selectedElement.action?.type === 'confetti' && '🎉 Triggers an animated festive confetti celebration explosion!'}
                     </div>
                   )}
                 </div>
@@ -8229,6 +9101,236 @@ function Builder() {
           </div>
         </div>
       )}
+
+      {/* ===== SIDE DRAWER OVERLAY ===== */}
+      {activeDrawerEl && (() => {
+        const a = activeDrawerEl.action || {};
+        const side = a.drawerSide || 'right';
+        const width = a.drawerWidth || '380px';
+        const bg = a.drawerBg || '#1e293b';
+        const textColor = a.drawerTextColor || '#f1f5f9';
+        const title = a.drawerTitle ?? 'Side Panel';
+        const items = a.drawerItems || [
+          { id: 1, type: 'text', content: 'Welcome to the side panel!' },
+          { id: 2, type: 'divider', content: '' },
+          { id: 3, type: 'link', content: 'Home | /' },
+          { id: 4, type: 'link', content: 'Contact Us | /contact' }
+        ];
+
+        return (
+          <>
+            {/* Backdrop Blur */}
+            <div
+              onClick={() => setActiveDrawerEl(null)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0,0,0,0.5)',
+                zIndex: 9990,
+                backdropFilter: 'blur(6px)',
+                transition: 'opacity 0.25s'
+              }}
+            />
+
+            {/* Slide Drawer Panel */}
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              [side]: 0,
+              width: width,
+              maxWidth: '100vw',
+              height: '100vh',
+              background: bg,
+              color: textColor,
+              zIndex: 9991,
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: side === 'right' ? '-10px 0 60px rgba(0,0,0,0.5)' : '10px 0 60px rgba(0,0,0,0.5)',
+              transition: 'transform 0.3s ease-in-out',
+              fontFamily: 'sans-serif'
+            }}>
+              {/* Header */}
+              <div style={{
+                display: 'flex',
+                justify: 'space-between',
+                alignItems: 'center',
+                padding: '20px 24px',
+                borderBottom: '1px solid rgba(255,255,255,0.1)'
+              }}>
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: textColor }}>{title}</h2>
+                <button
+                  onClick={() => setActiveDrawerEl(null)}
+                  style={{
+                    background: 'rgba(255,255,255,0.1)',
+                    border: 'none',
+                    color: textColor,
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    cursor: 'pointer',
+                    fontSize: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justify: 'center',
+                    transition: 'background 0.2s'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                >✕</button>
+              </div>
+
+              {/* Body Content Items */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {items.map((item, idx) => {
+                  if (item.type === 'divider') {
+                    return <hr key={idx} style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.12)', margin: '8px 0' }} />;
+                  }
+                  if (item.type === 'image') {
+                    return (
+                      <img
+                        key={idx}
+                        src={item.content || 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=600'}
+                        alt=""
+                        style={{ width: '100%', borderRadius: '10px', objectFit: 'cover', maxHeight: '240px' }}
+                      />
+                    );
+                  }
+                  if (item.type === 'link') {
+                    const parts = (item.content || '').split('|');
+                    const label = parts[0]?.trim() || 'Link Item';
+                    const url = parts[1]?.trim() || '#';
+                    return (
+                      <a
+                        key={idx}
+                        href={url}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justify: 'space-between',
+                          padding: '12px 16px',
+                          borderRadius: '8px',
+                          background: 'rgba(255,255,255,0.06)',
+                          color: textColor,
+                          textDecoration: 'none',
+                          fontWeight: 500,
+                          fontSize: '14px',
+                          transition: 'background 0.2s'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                      >
+                        <span>{label}</span>
+                        <span>→</span>
+                      </a>
+                    );
+                  }
+                  if (item.type === 'button') {
+                    return (
+                      <button
+                        key={idx}
+                        style={{
+                          width: '100%',
+                          padding: '12px 16px',
+                          borderRadius: '8px',
+                          background: 'var(--primary, #6366f1)',
+                          color: '#ffffff',
+                          border: 'none',
+                          fontWeight: 600,
+                          fontSize: '14px',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 14px rgba(99,102,241,0.4)'
+                        }}
+                      >
+                        {item.content || 'Click Me'}
+                      </button>
+                    );
+                  }
+                  return (
+                    <p key={idx} style={{ margin: 0, fontSize: '15px', lineHeight: 1.6, color: textColor, opacity: 0.9 }}>
+                      {item.content}
+                    </p>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
+      {/* ===== POPUP MODAL OVERLAY ===== */}
+      {activeModalEl && (() => {
+        const a = activeModalEl.action || {};
+        const bg = a.modalBg || '#1e293b';
+        return (
+          <div
+            onClick={(e) => { if (e.target === e.currentTarget) setActiveModalEl(null); }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.6)',
+              zIndex: 9992,
+              display: 'flex',
+              alignItems: 'center',
+              justify: 'center',
+              padding: '24px',
+              backdropFilter: 'blur(8px)',
+              fontFamily: 'sans-serif'
+            }}
+          >
+            <div style={{
+              background: bg,
+              borderRadius: '16px',
+              padding: '32px',
+              maxWidth: '480px',
+              width: '100%',
+              color: '#f1f5f9',
+              boxShadow: '0 30px 80px rgba(0,0,0,0.6)',
+              position: 'relative'
+            }}>
+              <button
+                onClick={() => setActiveModalEl(null)}
+                style={{
+                  position: 'absolute',
+                  top: '16px',
+                  right: '16px',
+                  background: 'rgba(255,255,255,0.1)',
+                  border: 'none',
+                  color: '#f1f5f9',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justify: 'center'
+                }}
+              >✕</button>
+              {a.modalImage && (
+                <img src={a.modalImage} alt="" style={{ width: '100%', borderRadius: '10px', marginBottom: '20px', maxHeight: '200px', objectFit: 'cover' }} />
+              )}
+              <h2 style={{ margin: '0 0 12px', fontSize: '22px', fontWeight: 700 }}>{a.modalTitle || 'Special Announcement'}</h2>
+              <p style={{ margin: '0 0 24px', fontSize: '15px', lineHeight: 1.7, opacity: 0.85 }}>{a.modalContent || 'Modal description content.'}</p>
+              <button
+                onClick={() => setActiveModalEl(null)}
+                style={{
+                  padding: '11px 24px',
+                  background: '#6366f1',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  boxShadow: '0 4px 14px rgba(99,102,241,0.4)'
+                }}
+              >
+                {a.modalCloseLabel || 'Close'}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ===== RIGHT-CLICK CONTEXT MENU ===== */}
       {contextMenu && !isPreview && (
