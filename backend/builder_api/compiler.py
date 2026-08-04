@@ -198,7 +198,7 @@ def render_compiled_element(el, site_id):
     elif el_type == 'image':
         src = content.get('src', 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=600&q=80')
         alt = content.get('alt', 'Image')
-        fit = styles.get('objectFit', 'cover')
+        fit = styles.get('objectFit', 'fill')
         position = styles.get('objectPosition', 'center')
         overlay = styles.get('hoverOverlayEnabled', False)
         coverage = styles.get('hoverOverlayCoverage', 'full')

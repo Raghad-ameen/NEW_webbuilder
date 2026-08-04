@@ -100,8 +100,8 @@ function getImageAlphaMask(src, styles) {
   return {
     maskImage: imageUrl,
     WebkitMaskImage: imageUrl,
-    maskSize: styles?.objectFit || 'cover',
-    WebkitMaskSize: styles?.objectFit || 'cover',
+    maskSize: styles?.objectFit || 'fill',
+    WebkitMaskSize: styles?.objectFit || 'fill',
     maskPosition: styles?.objectPosition || 'center',
     WebkitMaskPosition: styles?.objectPosition || 'center',
     maskRepeat: 'no-repeat',
@@ -1813,7 +1813,7 @@ function Builder() {
           }
         } else if (el.type === 'image') {
           const imgFilter = computeImageFilter(el.styles);
-          const fit = el.styles?.objectFit || 'cover';
+          const fit = el.styles?.objectFit || 'fill';
           const pos = el.styles?.objectPosition || 'center';
           const hasOverlay = el.styles?.hoverOverlayEnabled;
           const overlayColor = el.styles?.hoverOverlayColor || 'rgba(0,0,0,0.6)';
@@ -3267,7 +3267,7 @@ function Builder() {
       image: {
         type: 'image',
         content: { src: '', alt: 'Click to add image' },
-        styles: { borderRadius: '6', marginBottom: '15' }
+        styles: { borderRadius: '6', marginBottom: '15', objectFit: 'fill', objectPosition: 'center' }
       },
       video: {
         type: 'video',
@@ -3428,7 +3428,8 @@ function Builder() {
     if (!type) return;
 
     // Find the inner dropzone to get the correct coordinate origin (the 1200px container)
-    const dropzone = e.currentTarget.querySelector('.builder-canvas-section-dropzone');
+    const dropzone = document.querySelector(`[data-section-id="${sectionId}"] .builder-canvas-section-dropzone`)
+      || e.currentTarget.querySelector('.builder-canvas-section-dropzone');
     const rect = dropzone ? dropzone.getBoundingClientRect() : e.currentTarget.getBoundingClientRect();
     
     // Calculate unscaled coordinates so items drop perfectly under the mouse even when zoomed
@@ -3507,7 +3508,7 @@ function Builder() {
         content: { src: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80', alt: 'Visual Graphic' },
         width: 600,
         height: 400,
-        styles: { borderRadius: '6', marginBottom: '15' }
+        styles: { borderRadius: '6', marginBottom: '15', objectFit: 'fill', objectPosition: 'center' }
       },
       video: {
         type: 'video',
@@ -3972,6 +3973,21 @@ function Builder() {
     }
     const isInlineEditing = inlineEditingId === el.id;
 
+    const syncImageAspectRatio = (image) => {
+      if (el.type !== 'image') return;
+      const ratio = image.naturalWidth / image.naturalHeight;
+      if (!Number.isFinite(ratio) || ratio <= 0 || Math.abs(Number(el.styles?.imageAspectRatio) - ratio) < 0.001) return;
+      const width = Number(el.width) || image.naturalWidth;
+      const height = Math.max(1, Math.round(width / ratio));
+      const nextLayout = activeLayout.map(section => ({
+        ...section,
+        elements: (section.elements || []).map(element => element.id === el.id
+          ? { ...element, height, styles: { ...element.styles, imageAspectRatio: ratio } }
+          : element)
+      }));
+      updateLayout(nextLayout, false);
+    };
+
     const overlayControls = !isPreview && (
       <div className="element-overlay-controls">
         <button onClick={(e) => { e.stopPropagation(); handleMoveElement(el.id, 'up'); }} title="Move Up"><ArrowUp size={12} /></button>
@@ -4148,6 +4164,7 @@ function Builder() {
           }}
           disableDragging={isPreview}
           enableResizing={!isPreview}
+          lockAspectRatio={el.type === 'image' && el.styles?.aspectRatioLocked === true}
           scale={canvasZoom}
           dragGrid={snapToGrid > 0 ? [snapToGrid, snapToGrid] : [1,1]}
           resizeGrid={snapToGrid > 0 ? [snapToGrid, snapToGrid] : [1,1]}
@@ -4381,7 +4398,7 @@ function Builder() {
 
     if (el.type === 'image') {
       const imgFilter = computeImageFilter(el.styles);
-      const fit = el.styles?.objectFit || 'cover';
+      const fit = el.styles?.objectFit || 'fill';
       const pos = el.styles?.objectPosition || 'center';
       const hasOverlay = el.styles?.hoverOverlayEnabled;
       const overlayColor = el.styles?.hoverOverlayColor || 'rgba(0,0,0,0.6)';
@@ -4434,6 +4451,7 @@ function Builder() {
             src={el.content?.src || 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80'}
             alt={el.content?.alt || 'Graphic'}
             draggable={false}
+            onLoad={(e) => syncImageAspectRatio(e.currentTarget)}
             style={{
               width: '100%',
               height: '100%',
@@ -6653,13 +6671,13 @@ function Builder() {
                         <div>
                           <label style={{ fontSize: '10px' }}>Object Fit</label>
                           <select
-                            value={selectedElement.styles?.objectFit || 'cover'}
+                            value={selectedElement.styles?.objectFit || 'fill'}
                             onChange={(e) => updateSelectedElement({ styles: { objectFit: e.target.value } })}
                             style={{ fontSize: '11px', padding: '4px' }}
                           >
-                            <option value="cover">Cover (Fill)</option>
-                            <option value="contain">Contain (Fit)</option>
-                            <option value="fill">Stretch</option>
+                            <option value="fill">Fill frame (No margins)</option>
+                            <option value="contain">Contain (Keep proportions)</option>
+                            <option value="cover">Cover (Crop to fill)</option>
                             <option value="none">Original</option>
                             <option value="scale-down">Scale Down</option>
                           </select>
@@ -6679,6 +6697,14 @@ function Builder() {
                           </select>
                         </div>
                       </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '10px', cursor: 'pointer', marginBottom: '12px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedElement.styles?.aspectRatioLocked === true}
+                          onChange={(e) => updateSelectedElement({ styles: { aspectRatioLocked: e.target.checked } })}
+                        />
+                        Lock proportions while resizing
+                      </label>
 
                       {/* Image CSS Filters */}
                       <h4 style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--primary)', marginBottom: '10px', marginTop: '15px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
