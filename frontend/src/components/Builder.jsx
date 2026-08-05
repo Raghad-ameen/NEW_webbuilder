@@ -576,8 +576,8 @@ function Builder() {
   const [alignmentGuides, setAlignmentGuides] = useState([]);
   
   // Pro Builder Layout States
-  const [leftSidebarWidth, setLeftSidebarWidth] = useState(300);
-  const [rightSidebarWidth, setRightSidebarWidth] = useState(320);
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(240);
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(250);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [canvasZoom, setCanvasZoom] = useState(1);
@@ -604,6 +604,39 @@ function Builder() {
 
   const [renamingPageId, setRenamingPageId] = useState(null);
   const [renamePageValue, setRenamePageValue] = useState('');
+
+  const computeAutoFitZoom = useCallback((mode = viewMode) => {
+    if (!viewportRef.current) return 1;
+    const targetWidth = mode === 'mobile' ? 375 : mode === 'tablet' ? 768 : 1200;
+    const availableWidth = viewportRef.current.clientWidth - 40;
+    if (availableWidth <= 0) return 1;
+    if (targetWidth <= availableWidth) return 1;
+    const fitScale = Math.max(0.3, Math.min(1, availableWidth / targetWidth));
+    return Math.floor(fitScale * 100) / 100;
+  }, [viewMode]);
+
+  const changeViewMode = useCallback((newMode) => {
+    setViewMode(newMode);
+    setTimeout(() => {
+      if (viewportRef.current) {
+        setCanvasZoom(computeAutoFitZoom(newMode));
+      }
+    }, 50);
+  }, [computeAutoFitZoom]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (viewportRef.current && !isPreview) {
+        setCanvasZoom(computeAutoFitZoom(viewMode));
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    const timer = setTimeout(handleResize, 150);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(timer);
+    };
+  }, [computeAutoFitZoom, isPreview, viewMode]);
 
   const [inlineEditingId, setInlineEditingId] = useState(null);
   const inlineEditRef = useRef(null);
@@ -5102,13 +5135,13 @@ function Builder() {
   const getCanvasWidth = () => {
     if (viewMode === 'mobile') return '375px';
     if (viewMode === 'tablet') return '768px';
-    return '1280px';
+    return '1200px';
   };
 
   const getPreviewWidth = () => {
     if (viewMode === 'mobile') return '375px';
     if (viewMode === 'tablet') return '768px';
-    return '1280px';
+    return '100%';
   };
 
   if (!activePage) {
@@ -5210,31 +5243,29 @@ function Builder() {
           )}
         </div>
 
-        {!isPreview && (
-          <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', padding: '3px', borderRadius: 'var(--radius-sm)', gap: '2px' }}>
+        <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', padding: '3px', borderRadius: 'var(--radius-sm)', gap: '2px' }}>
             <button 
-              onClick={() => setViewMode('desktop')} 
+              onClick={() => changeViewMode('desktop')} 
               style={{ padding: '6px 12px', background: viewMode === 'desktop' ? 'var(--primary)' : 'transparent', borderRadius: '4px', border: 'none' }}
               title="Desktop width"
             >
               <Laptop size={15} style={{ color: '#fff' }} />
             </button>
             <button 
-              onClick={() => setViewMode('tablet')} 
+              onClick={() => changeViewMode('tablet')} 
               style={{ padding: '6px 12px', background: viewMode === 'tablet' ? 'var(--primary)' : 'transparent', borderRadius: '4px', border: 'none' }}
               title="Tablet width"
             >
               <Tablet size={15} style={{ color: '#fff' }} />
             </button>
             <button 
-              onClick={() => setViewMode('mobile')} 
+              onClick={() => changeViewMode('mobile')} 
               style={{ padding: '6px 12px', background: viewMode === 'mobile' ? 'var(--primary)' : 'transparent', borderRadius: '4px', border: 'none' }}
               title="Mobile width"
             >
               <Smartphone size={15} style={{ color: '#fff' }} />
             </button>
           </div>
-        )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'nowrap' }}>
           {!isPreview && (
@@ -5317,18 +5348,22 @@ function Builder() {
               </div>
 
               {/* Zoom Controls */}
-              <div style={{ display: 'flex', gap: '2px', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}>
+              <div style={{ display: 'flex', gap: '2px', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px', alignItems: 'center' }}>
                 <button 
-                  onClick={() => setCanvasZoom(z => Math.max(z - 0.1, 0.2))} 
-                  className="btn-secondary" style={{ padding: '6px 10px', fontSize: '14px', lineHeight: 1 }} title="Zoom Out"
+                  onClick={() => setCanvasZoom(z => Math.max(z - 0.05, 0.2))} 
+                  className="btn-secondary" style={{ padding: '6px 8px', fontSize: '14px', lineHeight: 1 }} title="Zoom Out"
                 >-</button>
-                <div style={{ display: 'flex', alignItems: 'center', padding: '0 8px', fontSize: '11px', fontWeight: 'bold', width: '45px', justifyContent: 'center', color: '#fff' }}>
+                <div style={{ display: 'flex', alignItems: 'center', padding: '0 6px', fontSize: '11px', fontWeight: 'bold', minWidth: '42px', justifyContent: 'center', color: '#fff' }}>
                   {Math.round(canvasZoom * 100)}%
                 </div>
                 <button 
-                  onClick={() => setCanvasZoom(z => Math.min(z + 0.1, 3))} 
-                  className="btn-secondary" style={{ padding: '6px 10px', fontSize: '14px', lineHeight: 1 }} title="Zoom In"
+                  onClick={() => setCanvasZoom(z => Math.min(z + 0.05, 3))} 
+                  className="btn-secondary" style={{ padding: '6px 8px', fontSize: '14px', lineHeight: 1 }} title="Zoom In"
                 >+</button>
+                <button
+                  onClick={() => setCanvasZoom(computeAutoFitZoom())}
+                  className="btn-secondary" style={{ padding: '4px 8px', fontSize: '10px', fontWeight: 'bold', color: 'var(--primary-light, #818cf8)' }} title="Fit canvas to screen"
+                >Fit</button>
               </div>
 
               {/* Grid & Snap Controls */}
@@ -6117,23 +6152,66 @@ function Builder() {
         )}
 
         {isPreview ? (
-          /* ===== TRUE FULL-SCREEN IFRAME PREVIEW ===== */
-          /* Renders the exact compiled HTML that gets deployed — pixel-perfect, real fonts, hover effects, animations */
+          /* ===== CANVA-STYLE REAL RESPONSIVE BROWSER PREVIEW ===== */
           <div style={{ 
             flexGrow: 1, 
             overflow: 'auto', 
             position: 'relative', 
-            background: getPageBgColor()
+            background: '#0f172a',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: viewMode === 'desktop' ? '12px' : '24px 12px'
           }}>
+            {/* Browser window frame mockup */}
             <div style={{
               width: '100%',
               maxWidth: getPreviewWidth(),
               margin: '0 auto',
               height: '100%',
-              minHeight: '100%',
               display: 'flex',
-              flexDirection: 'column'
+              flexDirection: 'column',
+              borderRadius: viewMode === 'desktop' ? '10px' : viewMode === 'tablet' ? '18px' : '28px',
+              overflow: 'hidden',
+              boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.75)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              background: '#090d16'
             }}>
+              {/* Browser window header bar */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                padding: '8px 16px',
+                background: '#1e293b',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                gap: '12px',
+                flexShrink: 0
+              }}>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ef4444' }} />
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f59e0b' }} />
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#10b981' }} />
+                </div>
+                <div style={{
+                  flex: 1,
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  borderRadius: '5px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  color: '#94a3b8',
+                  textAlign: 'center',
+                  fontFamily: 'monospace',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}>
+                  https://{site.slug || 'mywebsite'}.preview.site/{activePage.slug === 'home' ? '' : activePage.slug}
+                </div>
+                <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '600', letterSpacing: '0.3px' }}>
+                  {viewMode === 'desktop' ? '🖥️ Desktop (Fluid 100%)' : viewMode === 'tablet' ? '📱 Tablet (768px)' : '📱 Mobile (375px)'}
+                </span>
+              </div>
+
               <iframe
                 key={`preview-${activePage?.id}-${JSON.stringify(activeLayout).length}-${viewMode}`}
                 srcDoc={compileToStaticHtml({ ...activePage, layout: activeLayout }, site, pages, viewMode, true)}
@@ -6161,33 +6239,45 @@ function Builder() {
             onDrop={handleCanvasDrop}
             style={{
               flexGrow: 1,
-              padding: '40px',
+              padding: '24px 15px',
               overflow: 'auto',
               background: '#090d16',
               boxShadow: 'inset 0 0 100px rgba(0,0,0,0.8)',
-              position: 'relative'
+              position: 'relative',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center'
             }}
           >
             <div
               style={{
-                width: getCanvasWidth(),
+                width: `calc(${getCanvasWidth()} * ${canvasZoom})`,
                 margin: '0 auto',
-                minHeight: '100%',
-                backgroundColor: getPageBgColor(),
-                color: site.theme?.textColor || '#333333',
-                fontFamily: site.theme?.fontFamily || 'Inter, sans-serif',
-                boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
-                borderRadius: 'var(--radius-md)',
-                border: '2px solid var(--border)',
-                transition: 'width 0.3s ease-in-out, border-radius 0.3s',
-                overflow: 'visible',
-                position: 'relative',
                 display: 'flex',
-                flexDirection: 'column',
-                transform: `scale(${canvasZoom})`,
-                transformOrigin: 'top center'
+                justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'width 0.25s ease-in-out'
               }}
             >
+              <div
+                style={{
+                  width: getCanvasWidth(),
+                  flexShrink: 0,
+                  backgroundColor: getPageBgColor(),
+                  color: site.theme?.textColor || '#333333',
+                  fontFamily: site.theme?.fontFamily || 'Inter, sans-serif',
+                  boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
+                  borderRadius: 'var(--radius-md)',
+                  border: '2px solid var(--border)',
+                  transition: 'width 0.3s ease-in-out, border-radius 0.3s',
+                  overflow: 'visible',
+                  position: 'relative',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  transform: `scale(${canvasZoom})`,
+                  transformOrigin: 'top center'
+                }}
+              >
               <style dangerouslySetInnerHTML={{ __html: site.custom_css }} />
               <style dangerouslySetInnerHTML={{ __html: getHoverStylesCss() }} />
               <style dangerouslySetInnerHTML={{ __html: `
@@ -6454,6 +6544,7 @@ function Builder() {
               </div>
 
             </div>
+          </div>
 
             {isLassoing && lassoStart && lassoEnd && (
               <div style={{
