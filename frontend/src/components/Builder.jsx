@@ -56,7 +56,7 @@ const apiFetch = async (url, options = {}) => {
 
 const SUPPORTED_LANGUAGES = [
   { code: 'en', name: 'English', flag: '🇺🇸', dir: 'ltr' },
-  { code: 'ar', name: 'Arabic (العربية)', flag: '🇸🇦', dir: 'rtl' },
+  { code: 'ar', name: 'Arabic', flag: '🇸🇦', dir: 'rtl' },
   { code: 'fr', name: 'French (Français)', flag: '🇫🇷', dir: 'ltr' },
   { code: 'es', name: 'Spanish (Español)', flag: '🇪🇸', dir: 'ltr' },
   { code: 'de', name: 'German (Deutsch)', flag: '🇩🇪', dir: 'ltr' },
@@ -533,16 +533,16 @@ function Builder() {
       properties: 'Properties'
     },
     ar: {
-      builder: 'المُنشئ',
-      save: 'حفظ',
-      publish: 'نشر',
-      pages: 'الصفحات',
-      settings: 'الإعدادات',
-      layers: 'الطبقات',
-      preview: 'معاينة',
-      exitPreview: 'الخروج من المعاينة',
-      components: 'المكونات',
-      properties: 'الخصائص'
+      builder: 'Builder',
+      save: 'Save',
+      publish: 'Publish',
+      pages: 'Pages',
+      settings: 'Settings',
+      layers: 'Layers',
+      preview: 'Preview',
+      exitPreview: 'Exit Preview',
+      components: 'Components',
+      properties: 'Properties'
     }
   };
   const t = (key) => DICT[language]?.[key] || key;
@@ -2853,7 +2853,7 @@ function Builder() {
       
     } catch (error) {
       console.error("Export failed:", error);
-      alert('حدث خطأ أثناء التصدير');
+      alert('An error occurred during export');
     }
   };
 
@@ -7434,27 +7434,103 @@ function Builder() {
 
                   {['heading', 'text', 'button'].includes(selectedElement.type) && (
                     <div style={{ marginBottom: '15px' }}>
-                      <label>Text Align</label>
-                      <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', padding: '3px', borderRadius: '4px' }}>
-                        {['left', 'center', 'right'].map(align => (
+                      <label>Text Align & Justify</label>
+                      <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', padding: '3px', borderRadius: '6px', gap: '2px' }}>
+                        {[
+                          {
+                            value: 'left',
+                            title: 'Left',
+                            icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="4" width="18" height="2" rx="1"/><rect x="3" y="9" width="12" height="2" rx="1"/><rect x="3" y="14" width="18" height="2" rx="1"/><rect x="3" y="19" width="10" height="2" rx="1"/></svg>
+                          },
+                          {
+                            value: 'center',
+                            title: 'Center',
+                            icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="4" width="18" height="2" rx="1"/><rect x="6" y="9" width="12" height="2" rx="1"/><rect x="3" y="14" width="18" height="2" rx="1"/><rect x="7" y="19" width="10" height="2" rx="1"/></svg>
+                          },
+                          {
+                            value: 'right',
+                            title: 'Right',
+                            icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="4" width="18" height="2" rx="1"/><rect x="9" y="9" width="12" height="2" rx="1"/><rect x="3" y="14" width="18" height="2" rx="1"/><rect x="11" y="19" width="10" height="2" rx="1"/></svg>
+                          },
+                          {
+                            value: 'justify',
+                            title: 'Justify (Kashida / Full Justify)',
+                            icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="4" width="18" height="2" rx="1"/><rect x="3" y="9" width="18" height="2" rx="1"/><rect x="3" y="14" width="18" height="2" rx="1"/><rect x="3" y="19" width="18" height="2" rx="1"/></svg>
+                          }
+                        ].map(({ value: align, title, icon }) => (
                           <button
                             key={align}
                             onClick={() => updateSelectedElement({ styles: { textAlign: align } })}
+                            title={title}
                             style={{
                               flexGrow: 1,
-                              padding: '5px',
-                              fontSize: '11px',
+                              padding: '6px 4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
                               background: selectedElement.styles?.textAlign === align ? 'var(--primary)' : 'transparent',
-                              borderRadius: '3px',
+                              borderRadius: '4px',
                               border: 'none',
-                              color: '#fff',
-                              textTransform: 'capitalize'
+                              color: selectedElement.styles?.textAlign === align ? '#fff' : 'var(--text-secondary)',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s'
                             }}
                           >
-                            {align}
+                            {icon}
                           </button>
                         ))}
                       </div>
+
+                      {selectedElement.styles?.textAlign === 'justify' && (
+                        <div style={{ marginTop: '10px', padding: '10px', background: 'rgba(0,0,0,0.15)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                          <div style={{ marginBottom: '8px' }}>
+                            <label style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                              Text Justify Mode
+                            </label>
+                            <select
+                              value={selectedElement.styles?.textJustify || 'inter-word'}
+                              onChange={(e) => updateSelectedElement({ styles: { textJustify: e.target.value } })}
+                              style={{ fontSize: '11px', width: '100%' }}
+                            >
+                              <option value="inter-word">Inter-Word Spaces</option>
+                              <option value="kashida">Arabic Kashida / Letter Stretch</option>
+                              <option value="auto">Auto</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                              Last Line Alignment
+                            </label>
+                            <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px', gap: '2px' }}>
+                              {[
+                                { value: 'auto', label: 'Auto' },
+                                { value: 'right', label: 'Right' },
+                                { value: 'center', label: 'Center' },
+                                { value: 'left', label: 'Left' },
+                                { value: 'justify', label: 'Justify' }
+                              ].map(({ value, label }) => (
+                                <button
+                                  key={value}
+                                  onClick={() => updateSelectedElement({ styles: { textAlignLast: value } })}
+                                  style={{
+                                    flexGrow: 1,
+                                    padding: '4px 2px',
+                                    fontSize: '9px',
+                                    background: (selectedElement.styles?.textAlignLast || 'auto') === value ? 'rgba(99,102,241,0.8)' : 'transparent',
+                                    borderRadius: '3px',
+                                    border: 'none',
+                                    color: '#fff',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -8387,6 +8463,7 @@ function Builder() {
                                         <option value="left">Left</option>
                                         <option value="center">Center</option>
                                         <option value="right">Right</option>
+                                        <option value="justify">Justify (Kashida / Align)</option>
                                       </select>
                                     </div>
                                     <div>
