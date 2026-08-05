@@ -11,6 +11,41 @@ IMAGE_ONLY_STYLE_KEYS = {
     'hoverFilterBlur'
 }
 
+# Must match the editor's font catalogue. Only request a web font when it is a
+# known Google family; system fonts remain local and custom CSS still works.
+GOOGLE_FONT_FAMILIES = frozenset({
+    'Inter', 'Outfit', 'Roboto', 'Manrope', 'DM Sans', 'Plus Jakarta Sans', 'Poppins',
+    'Montserrat', 'Open Sans', 'Lato', 'Raleway', 'Nunito', 'Work Sans', 'Source Sans 3',
+    'Source Sans Pro', 'Noto Sans', 'IBM Plex Sans', 'Fira Sans', 'Ubuntu', 'Barlow',
+    'Space Grotesk', 'Sora', 'Urbanist', 'Rubik', 'Playfair Display', 'Cormorant Garamond',
+    'DM Serif Display', 'Merriweather', 'Lora', 'Libre Baskerville', 'EB Garamond',
+    'Crimson Pro', 'Fraunces', 'Bodoni Moda', 'Spectral', 'Alegreya', 'Cardo', 'Bitter',
+    'Tinos', 'Bebas Neue', 'Anton', 'Oswald', 'Archivo Black', 'Abril Fatface',
+    'Righteous', 'Bungee', 'Alfa Slab One', 'Josefin Sans', 'Comfortaa', 'Quicksand',
+    'Caveat', 'Dancing Script', 'Pacifico', 'Lobster', 'Satisfy', 'Kalam',
+    'Shadows Into Light', 'JetBrains Mono', 'Fira Code', 'IBM Plex Mono', 'Space Mono',
+    'Source Code Pro', 'Roboto Mono', 'Inconsolata', 'Cairo', 'Tajawal', 'Almarai',
+    'Changa', 'Changa One', 'Noto Sans Arabic', 'Noto Naskh Arabic', 'Noto Kufi Arabic',
+    'Amiri', 'Scheherazade New', 'Lateef', 'Markazi Text', 'Reem Kufi', 'Readex Pro',
+    'Alexandria', 'IBM Plex Sans Arabic', 'Aref Ruqaa Ink', 'Katibeh', 'Harmattan',
+    'Jomhuria', 'Lalezar', 'Rakkas'
+})
+
+def primary_font_name(font_family):
+    return str(font_family or '').split(',')[0].strip().strip("'\"")
+
+def google_fonts_url(font_families):
+    names = []
+    for family in font_families:
+        name = primary_font_name(family)
+        if name in GOOGLE_FONT_FAMILIES and name not in names:
+            names.append(name)
+    if not names:
+        return ''
+    return 'https://fonts.googleapis.com/css2?' + '&'.join(
+        f'family={urllib.parse.quote_plus(name)}' for name in names
+    ) + '&display=swap'
+
 def image_filter(styles, hover=False):
     styles = styles or {}
     values = [
@@ -203,13 +238,16 @@ def render_compiled_element(el, site_id):
         overlay = styles.get('hoverOverlayEnabled', False)
         coverage = styles.get('hoverOverlayCoverage', 'full')
         overlay_positions = {
-            'top-half': 'top:0;height:50%;', 'bottom-half': 'top:50%;height:50%;',
-            'left-half': 'left:0;width:50%;', 'right-half': 'left:50%;width:50%;',
-            'gradient-bottom': 'top:40%;height:60%;background:linear-gradient(to top, var(--overlay-color), transparent);align-items:flex-end;justify-content:flex-end;'
+            # Keep the overlay full size, then clip it. This preserves the
+            # PNG/WebP alpha-mask coordinate space for partial coverage.
+            'top-half': 'clip-path:inset(0 0 50% 0);', 'bottom-half': 'clip-path:inset(50% 0 0 0);',
+            'left-half': 'clip-path:inset(0 50% 0 0);', 'right-half': 'clip-path:inset(0 0 0 50%);',
+            'gradient-bottom': 'background:linear-gradient(to top, var(--overlay-color) 0%, var(--overlay-color) 60%, transparent 100%);align-items:flex-end;justify-content:flex-end;'
         }
         overlay_style = f'--overlay-color:{styles.get("hoverOverlayColor", "rgba(0,0,0,.6)")};background:var(--overlay-color);color:{styles.get("hoverOverlayTextColor", "#fff")};{overlay_positions.get(coverage, "")}'
-        if styles.get('hoverOverlayRespectTransparency', True):
-            overlay_style += f'mask-image:url("{src}");-webkit-mask-image:url("{src}");mask-size:{fit};-webkit-mask-size:{fit};mask-position:{position};-webkit-mask-position:{position};mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat;'
+        if src and styles.get('hoverOverlayRespectTransparency', True):
+            mask_size = '100% 100%' if fit == 'fill' else fit
+            overlay_style += f'mask-image:url("{src}");-webkit-mask-image:url("{src}");mask-size:{mask_size};-webkit-mask-size:{mask_size};mask-position:{position};-webkit-mask-position:{position};mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat;'
         overlay_markup = f'<div class="img-hover-overlay" style="{overlay_style}">{styles.get("hoverOverlayText", "")}</div>' if overlay else ''
         media_markup = f'<img class="image-media" src="{src}" alt="{alt}" style="object-fit:{fit};object-position:{position};filter:{image_filter(styles)};" />' if src else '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:1px dashed #94a3b8;color:#64748b;font-size:12px;">Add an image</div>'
         inner_markup = f'<div class="image-frame">{media_markup}{overlay_markup}</div>'
@@ -590,6 +628,14 @@ def compile_layout_to_html(site, page, pages_list):
     text_color = theme.get('textColor', '#333333')
     primary_color = theme.get('primaryColor', '#007bff')
     font_family = theme.get('fontFamily', 'Inter, sans-serif')
+    page_font_url = google_fonts_url([
+        font_family,
+        *[
+            element.get('styles', {}).get('fontFamily')
+            for section in layout
+            for element in section.get('elements', [])
+        ]
+    ])
     
     # Generate Page Title
     page_title = page.meta_title or f"{page.title} | {site.name}"
@@ -643,8 +689,9 @@ def compile_layout_to_html(site, page, pages_list):
                 speed = image_styles.get('imageHoverSpeed', .3)
                 if image_styles.get('hoverOverlayEnabled') or str(scale) != '1' or str(rotate) != '0' or image_filter(image_styles, True) != image_filter(image_styles):
                     hover_styles_css += f'''[data-element-id="{el.get('id', '')}"] .image-media {{ transition: filter {speed}s ease, transform {speed}s ease; }}
+                    [data-element-id="{el.get('id', '')}"] .img-hover-overlay {{ transition: opacity {speed}s ease, transform {speed}s ease; transform-origin:center; }}
                     [data-element-id="{el.get('id', '')}"]:hover .image-media {{ filter: {image_filter(image_styles, True)} !important; transform: scale({scale}) rotate({rotate}deg); }}
-                    [data-element-id="{el.get('id', '')}"]:hover .img-hover-overlay {{ opacity: {image_styles.get('hoverOverlayOpacity', 1)}; }}'''
+                    [data-element-id="{el.get('id', '')}"]:hover .img-hover-overlay {{ opacity: {image_styles.get('hoverOverlayOpacity', 1)}; transform: scale({scale}) rotate({rotate}deg); }}'''
             hover = el.get('hoverStyles')
             if hover:
                 hover_rules = []
@@ -691,7 +738,7 @@ def compile_layout_to_html(site, page, pages_list):
     <meta name="description" content="{meta_desc}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    {f'<link href="{page_font_url}" rel="stylesheet">' if page_font_url else ''}
     <style>
         /* Base Reset */
         body, h1, h2, h3, h4, h5, h6, p, ul, ol, li, figure, figcaption, blockquote, dl, dd, hr {{

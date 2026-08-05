@@ -70,6 +70,60 @@ const SUPPORTED_LANGUAGES = [
   { code: 'tr', name: 'Turkish (Türkçe)', flag: '🇹🇷', dir: 'ltr' }
 ];
 
+// One shared catalogue for the global theme and element properties. Fonts from
+// Google are loaded on demand, so a choice never silently falls back because a
+// visitor does not happen to have that font installed locally.
+const FONT_GROUPS = [
+  { label: 'Modern & Clean', fonts: [
+    ['Inter', "'Inter', sans-serif"], ['Outfit', "'Outfit', sans-serif"], ['Roboto', "'Roboto', sans-serif"], ['Manrope', "'Manrope', sans-serif"], ['DM Sans', "'DM Sans', sans-serif"], ['Plus Jakarta Sans', "'Plus Jakarta Sans', sans-serif"], ['Poppins', "'Poppins', sans-serif"], ['Montserrat', "'Montserrat', sans-serif"], ['Open Sans', "'Open Sans', sans-serif"], ['Lato', "'Lato', sans-serif"], ['Raleway', "'Raleway', sans-serif"], ['Nunito', "'Nunito', sans-serif"], ['Work Sans', "'Work Sans', sans-serif"], ['Source Sans 3', "'Source Sans 3', sans-serif"], ['Source Sans Pro', "'Source Sans Pro', sans-serif"], ['Noto Sans', "'Noto Sans', sans-serif"], ['IBM Plex Sans', "'IBM Plex Sans', sans-serif"], ['Fira Sans', "'Fira Sans', sans-serif"], ['Ubuntu', "'Ubuntu', sans-serif"], ['Barlow', "'Barlow', sans-serif"], ['Space Grotesk', "'Space Grotesk', sans-serif"], ['Sora', "'Sora', sans-serif"], ['Urbanist', "'Urbanist', sans-serif"], ['Rubik', "'Rubik', sans-serif"]
+  ] },
+  { label: 'Editorial & Serif', fonts: [
+    ['Playfair Display', "'Playfair Display', serif"], ['Cormorant Garamond', "'Cormorant Garamond', serif"], ['DM Serif Display', "'DM Serif Display', serif"], ['Merriweather', "'Merriweather', serif"], ['Lora', "'Lora', serif"], ['Libre Baskerville', "'Libre Baskerville', serif"], ['EB Garamond', "'EB Garamond', serif"], ['Crimson Pro', "'Crimson Pro', serif"], ['Fraunces', "'Fraunces', serif"], ['Bodoni Moda', "'Bodoni Moda', serif"], ['Spectral', "'Spectral', serif"], ['Alegreya', "'Alegreya', serif"], ['Cardo', "'Cardo', serif"], ['Bitter', "'Bitter', serif"], ['Tinos', "'Tinos', serif"]
+  ] },
+  { label: 'Bold & Display', fonts: [
+    ['Bebas Neue', "'Bebas Neue', sans-serif"], ['Anton', "'Anton', sans-serif"], ['Oswald', "'Oswald', sans-serif"], ['Archivo Black', "'Archivo Black', sans-serif"], ['Abril Fatface', "'Abril Fatface', serif"], ['Righteous', "'Righteous', sans-serif"], ['Bungee', "'Bungee', sans-serif"], ['Alfa Slab One', "'Alfa Slab One', serif"], ['Josefin Sans', "'Josefin Sans', sans-serif"], ['Comfortaa', "'Comfortaa', sans-serif"], ['Quicksand', "'Quicksand', sans-serif"]
+  ] },
+  { label: 'Handwritten & Creative', fonts: [
+    ['Caveat', "'Caveat', cursive"], ['Dancing Script', "'Dancing Script', cursive"], ['Pacifico', "'Pacifico', cursive"], ['Lobster', "'Lobster', cursive"], ['Satisfy', "'Satisfy', cursive"], ['Kalam', "'Kalam', cursive"], ['Shadows Into Light', "'Shadows Into Light', cursive"]
+  ] },
+  { label: 'Monospace & Technical', fonts: [
+    ['JetBrains Mono', "'JetBrains Mono', monospace"], ['Fira Code', "'Fira Code', monospace"], ['IBM Plex Mono', "'IBM Plex Mono', monospace"], ['Space Mono', "'Space Mono', monospace"], ['Source Code Pro', "'Source Code Pro', monospace"], ['Roboto Mono', "'Roboto Mono', monospace"], ['Inconsolata', "'Inconsolata', monospace"]
+  ] },
+  { label: 'Arabic', fonts: [
+    ['Cairo', "'Cairo', sans-serif"], ['Tajawal', "'Tajawal', sans-serif"], ['Almarai', "'Almarai', sans-serif"], ['Changa', "'Changa', sans-serif"], ['Changa One', "'Changa One', sans-serif"], ['Noto Sans Arabic', "'Noto Sans Arabic', sans-serif"], ['Noto Naskh Arabic', "'Noto Naskh Arabic', serif"], ['Noto Kufi Arabic', "'Noto Kufi Arabic', sans-serif"], ['Amiri', "'Amiri', serif"], ['Scheherazade New', "'Scheherazade New', serif"], ['Lateef', "'Lateef', serif"], ['Markazi Text', "'Markazi Text', serif"], ['Reem Kufi', "'Reem Kufi', sans-serif"], ['Readex Pro', "'Readex Pro', sans-serif"], ['Alexandria', "'Alexandria', sans-serif"], ['IBM Plex Sans Arabic', "'IBM Plex Sans Arabic', sans-serif"], ['Aref Ruqaa Ink', "'Aref Ruqaa Ink', serif"], ['Katibeh', "'Katibeh', serif"], ['Harmattan', "'Harmattan', sans-serif"], ['Jomhuria', "'Jomhuria', serif"], ['Lalezar', "'Lalezar', serif"], ['Rakkas', "'Rakkas', serif"]
+  ] },
+  { label: 'System Fonts', system: true, fonts: [
+    ['Arial', 'Arial, sans-serif'], ['Helvetica', 'Helvetica, sans-serif'], ['Georgia', 'Georgia, serif'], ['Times New Roman', "'Times New Roman', serif"], ['Verdana', 'Verdana, sans-serif'], ['Trebuchet MS', "'Trebuchet MS', sans-serif"], ['Impact', 'Impact, sans-serif'], ['Comic Sans MS', "'Comic Sans MS', cursive"], ['Courier New', "'Courier New', monospace"], ['Lucida Console', "'Lucida Console', monospace"], ['Tahoma', 'Tahoma, sans-serif'], ['Segoe UI', "'Segoe UI', sans-serif"]
+  ] }
+];
+
+const GOOGLE_FONT_NAMES = new Set(FONT_GROUPS.filter(group => !group.system).flatMap(group => group.fonts.map(([name]) => name)));
+
+function getPrimaryFontName(fontFamily) {
+  return String(fontFamily || '').split(',')[0].trim().replace(/^['"]|['"]$/g, '');
+}
+
+function normalizeFontFamily(fontFamily) {
+  const primaryName = getPrimaryFontName(fontFamily);
+  for (const group of FONT_GROUPS) {
+    const match = group.fonts.find(([name]) => name === primaryName);
+    if (match) return match[1];
+  }
+  return fontFamily || 'inherit';
+}
+
+function getGoogleFontsUrl(fontFamilies) {
+  const names = [...new Set((fontFamilies || []).map(getPrimaryFontName).filter(name => GOOGLE_FONT_NAMES.has(name)))];
+  if (!names.length) return '';
+  const families = names.map(name => `family=${encodeURIComponent(name).replace(/%20/g, '+')}`).join('&');
+  return `https://fonts.googleapis.com/css2?${families}&display=swap`;
+}
+
+function getGoogleFontImport(fontFamilies) {
+  const url = getGoogleFontsUrl(fontFamilies);
+  return url ? `@import url('${url}');` : '';
+}
+
 function computeImageFilter(styles) {
   if (!styles) return 'none';
   const parts = [];
@@ -249,6 +303,31 @@ function Builder() {
   const [activePage, setActivePage] = useState(null);
   const [activeLayout, setActiveLayout] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const selectedFontFamilies = useMemo(() => [
+    site?.theme?.fontFamily,
+    ...activeLayout.flatMap(section => (section.elements || []).map(element => element.styles?.fontFamily))
+  ], [site?.theme?.fontFamily, activeLayout]);
+  const selectedFontsUrl = useMemo(() => getGoogleFontsUrl(selectedFontFamilies), [selectedFontFamilies]);
+
+  // The editor itself is outside the generated preview document. Attach a
+  // single live stylesheet here so every selected property font renders for
+  // real on the canvas as soon as it is selected.
+  useEffect(() => {
+    const linkId = 'builder-selected-google-fonts';
+    let link = document.getElementById(linkId);
+    if (!selectedFontsUrl) {
+      link?.remove();
+      return;
+    }
+    if (!link) {
+      link = document.createElement('link');
+      link.id = linkId;
+      link.rel = 'stylesheet';
+      document.head.appendChild(link);
+    }
+    if (link.href !== selectedFontsUrl) link.href = selectedFontsUrl;
+  }, [selectedFontsUrl]);
 
   // ── SEARCH STATE (brain) ──────────────────────────────────────────────────
   const matchedElementIds = useMemo(
@@ -1490,8 +1569,18 @@ function Builder() {
   const compileToStaticHtml = (page = activePage, currentSite = site, allPages = pages, previewViewMode = 'desktop', isLivePreview = false) => {
     if (!page) return '';
     const fontFamily = currentSite.theme?.fontFamily || 'Inter, sans-serif';
-    const fontName = fontFamily.split(',')[0].replace(/['"]/g, '');
-    const fontImport = `@import url('https://fonts.googleapis.com/css2?family=${fontName.replace(/\s+/g, '+')}:wght@300;400;600;800&display=swap');`;
+    let pageLayoutForFonts = activeLayout;
+    if (page.id !== activePage?.id) {
+      try {
+        pageLayoutForFonts = typeof page.layout === 'string' ? JSON.parse(page.layout || '[]') : (page.layout || []);
+      } catch {
+        pageLayoutForFonts = [];
+      }
+    }
+    const fontImport = getGoogleFontImport([
+      fontFamily,
+      ...pageLayoutForFonts.flatMap(section => (section.elements || []).map(element => element.styles?.fontFamily))
+    ]);
 
     let pageBgColor = currentSite.theme?.backgroundColor || '#ffffff';
     try {
@@ -1558,8 +1647,9 @@ function Builder() {
           const hoverFilter = computeImageHoverFilter(el.styles);
           const scale = el.styles?.imageHoverScale || '1';
           const rotation = el.styles?.imageHoverRotate || '0';
+          const speed = el.styles?.imageHoverSpeed || '0.3';
           if (el.styles?.hoverOverlayEnabled || hoverFilter !== computeImageFilter(el.styles) || scale !== '1' || rotation !== '0') {
-            hoverStylesCss += `[data-element-id="${el.id}"]:hover .image-media { filter: ${hoverFilter} !important; transform: scale(${scale}) rotate(${rotation}deg); }`;
+            hoverStylesCss += `[data-element-id="${el.id}"] .img-hover-overlay { transition: opacity ${speed}s ease, transform ${speed}s ease; transform-origin: center; } [data-element-id="${el.id}"]:hover .image-media { filter: ${hoverFilter} !important; transform: scale(${scale}) rotate(${rotation}deg); } [data-element-id="${el.id}"]:hover .img-hover-overlay { transform: scale(${scale}) rotate(${rotation}deg); }`;
           }
         }
         if (el.hoverStyles) {
@@ -3933,8 +4023,9 @@ function Builder() {
           if (el.styles?.hoverOverlayEnabled || scale !== '1' || rotation !== '0' || hoverFilter !== computeImageFilter(el.styles)) {
             css += `
               [data-element-id="${el.id}"] .image-media { transition: filter ${speed}s ease, transform ${speed}s ease; }
+              [data-element-id="${el.id}"] .img-hover-overlay { transition: opacity ${speed}s ease, transform ${speed}s ease; transform-origin: center; }
               [data-element-id="${el.id}"]:hover .image-media { filter: ${hoverFilter}; transform: scale(${scale}) rotate(${rotation}deg); }
-              [data-element-id="${el.id}"]:hover .img-hover-overlay { opacity: ${el.styles?.hoverOverlayOpacity ?? 1}; }
+              [data-element-id="${el.id}"]:hover .img-hover-overlay { opacity: ${el.styles?.hoverOverlayOpacity ?? 1}; transform: scale(${scale}) rotate(${rotation}deg); }
             `;
           }
         }
@@ -5835,26 +5926,19 @@ function Builder() {
                   <div>
                     <label>Font Family</label>
                     <select
-                      value={site.theme?.fontFamily || 'Inter, sans-serif'}
+                      value={normalizeFontFamily(site.theme?.fontFamily || 'Inter, sans-serif')}
                       onChange={(e) => {
                         const updated = { ...site, theme: { ...site.theme, fontFamily: e.target.value } };
                         saveSiteConfig(updated);
                       }}
                     >
-                      <option value="Inter, sans-serif">Inter (Modern Clean)</option>
-                      <option value="Outfit, sans-serif">Outfit (Premium Bold)</option>
-                      <option value="Plus Jakarta Sans, sans-serif">Jakarta (Elegant)</option>
-                      <option value="Playfair Display, Georgia, serif">Playfair (Serif/Warm)</option>
-                      <option value="Roboto, sans-serif">Roboto (Structured)</option>
-                      <option value="Montserrat, sans-serif">Montserrat (Strong)</option>
-                      <option value="Raleway, sans-serif">Raleway (Light & Elegant)</option>
-                      <option value="Poppins, sans-serif">Poppins (Rounded Modern)</option>
-                      <option value="Nunito, sans-serif">Nunito (Friendly Round)</option>
-                      <option value="DM Sans, sans-serif">DM Sans (Clean Pro)</option>
-                      <option value="Space Grotesk, sans-serif">Space Grotesk (Tech)</option>
-                      <option value="Merriweather, serif">Merriweather (Classic Serif)</option>
-                      <option value="Lora, serif">Lora (Editorial Serif)</option>
-                      <option value="Fira Code, monospace">Fira Code (Developer/Mono)</option>
+                      {FONT_GROUPS.map(group => (
+                        <optgroup key={group.label} label={group.label}>
+                          {group.fonts.map(([name, value]) => (
+                            <option key={value} value={value} style={{ fontFamily: value }}>{name}</option>
+                          ))}
+                        </optgroup>
+                      ))}
                     </select>
                   </div>
 
@@ -7307,64 +7391,18 @@ function Builder() {
                     <div style={{ marginBottom: '12px' }}>
                       <label>Font Family</label>
                       <select
-                        value={selectedElement.styles?.fontFamily || 'inherit'}
+                        value={normalizeFontFamily(selectedElement.styles?.fontFamily || 'inherit')}
                         onChange={(e) => updateSelectedElement({ styles: { fontFamily: e.target.value } })}
                         style={{ fontSize: '11px' }}
                       >
                         <option value="inherit">Inherit (Default)</option>
-                        <optgroup label="English Fonts">
-                          <option value="'Outfit', sans-serif">Outfit</option>
-                          <option value="'Inter', sans-serif">Inter</option>
-                          <option value="'Roboto', sans-serif">Roboto</option>
-                          <option value="'Open Sans', sans-serif">Open Sans</option>
-                          <option value="'Lato', sans-serif">Lato</option>
-                          <option value="'Montserrat', sans-serif">Montserrat</option>
-                          <option value="'Poppins', sans-serif">Poppins</option>
-                          <option value="'Raleway', sans-serif">Raleway</option>
-                          <option value="'Noto Sans', sans-serif">Noto Sans</option>
-                          <option value="'Tinos', serif">Tinos</option>
-                          <option value="'Cormorant Garamond', serif">Cormorant Garamond</option>
-                          <option value="'Playfair Display', serif">Playfair Display</option>
-                          <option value="'Merriweather', serif">Merriweather</option>
-                          <option value="'Source Sans Pro', sans-serif">Source Sans Pro</option>
-                          <option value="'Nunito', sans-serif">Nunito</option>
-                          <option value="'Work Sans', sans-serif">Work Sans</option>
-                          <option value="'IBM Plex Sans', sans-serif">IBM Plex Sans</option>
-                          <option value="'Fira Sans', sans-serif">Fira Sans</option>
-                          <option value="'Ubuntu', sans-serif">Ubuntu</option>
-                          <option value="'Barlow', sans-serif">Barlow</option>
-                          <option value="'DM Sans', sans-serif">DM Sans</option>
-                          <option value="'Space Grotesk', sans-serif">Space Grotesk</option>
-                          <option value="Arial, sans-serif">Arial</option>
-                          <option value="'Helvetica', sans-serif">Helvetica</option>
-                          <option value="Georgia, serif">Georgia</option>
-                          <option value="'Times New Roman', serif">Times New Roman</option>
-                          <option value="Verdana, sans-serif">Verdana</option>
-                          <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
-                          <option value="Impact, sans-serif">Impact</option>
-                          <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
-                          <option value="'Courier New', monospace">Courier New</option>
-                          <option value="'Lucida Console', monospace">Lucida Console</option>
-                          <option value="Tahoma, sans-serif">Tahoma</option>
-                          <option value="'Segoe UI', sans-serif">Segoe UI</option>
-                        </optgroup>
-                        <optgroup label="Arabic Fonts">
-                          <option value="'Noto Sans Arabic', sans-serif">Noto Sans Arabic</option>
-                          <option value="'Noto Naskh Arabic', serif">Noto Naskh Arabic</option>
-                          <option value="'Amiri', serif">Amiri</option>
-                          <option value="'Scheherazade New', serif">Scheherazade New</option>
-                          <option value="Lateef, serif">Lateef</option>
-                          <option value="'Markazi Text', serif">Markazi Text</option>
-                          <option value="'Reem Kufi', sans-serif">Reem Kufi</option>
-                          <option value="Jomhuria, serif">Jomhuria</option>
-                          <option value="Lalezar, serif">Lalezar</option>
-                          <option value="Rakkas, serif">Rakkas</option>
-                          <option value="'Changa One', sans-serif">Changa One</option>
-                          <option value="Cairo, sans-serif">Cairo</option>
-                          <option value="Tajawal, sans-serif">Tajawal</option>
-                          <option value="Almarai, sans-serif">Almarai</option>
-                          <option value="Changa, sans-serif">Changa</option>
-                        </optgroup>
+                        {FONT_GROUPS.map(group => (
+                          <optgroup key={group.label} label={group.label}>
+                            {group.fonts.map(([name, value]) => (
+                              <option key={value} value={value} style={{ fontFamily: value }}>{name}</option>
+                            ))}
+                          </optgroup>
+                        ))}
                       </select>
                     </div>
                   )}
