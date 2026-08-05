@@ -97,11 +97,15 @@ function computeImageHoverFilter(styles) {
 function getImageAlphaMask(src, styles) {
   if (!src || styles?.hoverOverlayRespectTransparency === false) return {};
   const imageUrl = `url("${String(src).replace(/"/g, '\\"')}")`;
+  const objectFit = styles?.objectFit || 'fill';
+  // CSS masks do not support object-fit's "fill" keyword. Stretch the mask
+  // explicitly so it shares the exact pixel space as the rendered image.
+  const maskSize = objectFit === 'fill' ? '100% 100%' : objectFit;
   return {
     maskImage: imageUrl,
     WebkitMaskImage: imageUrl,
-    maskSize: styles?.objectFit || 'fill',
-    WebkitMaskSize: styles?.objectFit || 'fill',
+    maskSize,
+    WebkitMaskSize: maskSize,
     maskPosition: styles?.objectPosition || 'center',
     WebkitMaskPosition: styles?.objectPosition || 'center',
     maskRepeat: 'no-repeat',
@@ -1820,19 +1824,20 @@ function Builder() {
           const overlayTextColor = el.styles?.hoverOverlayTextColor || '#ffffff';
           const overlayCoverage = el.styles?.hoverOverlayCoverage || 'full';
           const overlayText = el.styles?.hoverOverlayText || '';
-          const maskSource = el.content?.src || 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80';
-          const alphaMaskCss = el.styles?.hoverOverlayRespectTransparency === false ? '' : `mask-image:url(&quot;${maskSource}&quot;);-webkit-mask-image:url(&quot;${maskSource}&quot;);mask-size:${fit};-webkit-mask-size:${fit};mask-position:${pos};-webkit-mask-position:${pos};mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat;`;
+          const maskSource = el.content?.src || '';
+          const maskSize = fit === 'fill' ? '100% 100%' : fit;
+          const alphaMaskCss = !maskSource || el.styles?.hoverOverlayRespectTransparency === false ? '' : `mask-image:url(&quot;${maskSource}&quot;);-webkit-mask-image:url(&quot;${maskSource}&quot;);mask-size:${maskSize};-webkit-mask-size:${maskSize};mask-position:${pos};-webkit-mask-position:${pos};mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat;`;
 
           let overlayStyles = `position: absolute; left: 0; top: 0; width: 100%; height: 100%; background-color: ${overlayColor}; color: ${overlayTextColor}; display: flex; align-items: center; justify-content: center; flex-direction: column; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; padding: 12px; box-sizing: border-box; font-weight: 600; text-align: center; border-radius: inherit;${alphaMaskCss}`;
-          if (overlayCoverage === 'top-half') overlayStyles += ` height: 50%;`;
-          else if (overlayCoverage === 'bottom-half') overlayStyles += ` top: 50%; height: 50%;`;
-          else if (overlayCoverage === 'left-half') overlayStyles += ` width: 50%;`;
-          else if (overlayCoverage === 'right-half') overlayStyles += ` left: 50%; width: 50%;`;
-          else if (overlayCoverage === 'gradient-bottom') overlayStyles += ` background: linear-gradient(to top, ${overlayColor}, transparent); top: 40%; height: 60%; align-items: flex-end; justify-content: flex-end;`;
+          if (overlayCoverage === 'top-half') overlayStyles += ` clip-path: inset(0 0 50% 0);`;
+          else if (overlayCoverage === 'bottom-half') overlayStyles += ` clip-path: inset(50% 0 0 0);`;
+          else if (overlayCoverage === 'left-half') overlayStyles += ` clip-path: inset(0 50% 0 0);`;
+          else if (overlayCoverage === 'right-half') overlayStyles += ` clip-path: inset(0 0 0 50%);`;
+          else if (overlayCoverage === 'gradient-bottom') overlayStyles += ` background: linear-gradient(to top, ${overlayColor} 0%, ${overlayColor} 60%, transparent 100%); align-items: flex-end; justify-content: flex-end;`;
 
           innerMarkup = `
             <div class="image-frame" style="--overlay-opacity: ${el.styles?.hoverOverlayOpacity ?? 1};">
-              <img class="image-media" src="${el.content?.src || 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80'}" alt="${el.content?.alt || 'Graphic'}" style="object-fit: ${fit}; object-position: ${pos}; filter: ${imgFilter}; transition: filter ${el.styles?.imageHoverSpeed || '0.3'}s ease, transform ${el.styles?.imageHoverSpeed || '0.3'}s ease;" />
+              ${el.content?.src ? `<img class="image-media" src="${el.content.src}" alt="${el.content?.alt || 'Image'}" style="object-fit: ${fit}; object-position: ${pos}; filter: ${imgFilter}; transition: filter ${el.styles?.imageHoverSpeed || '0.3'}s ease, transform ${el.styles?.imageHoverSpeed || '0.3'}s ease;" />` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:1px dashed #94a3b8;color:#64748b;font-size:12px;">Add an image</div>`}
               ${hasOverlay ? `<div class="img-hover-overlay" style="${overlayStyles}">${overlayText ? `<span>${overlayText}</span>` : ''}</div>` : ''}
             </div>
           `;
@@ -3267,7 +3272,9 @@ function Builder() {
       image: {
         type: 'image',
         content: { src: '', alt: 'Click to add image' },
-        styles: { borderRadius: '6', marginBottom: '15', objectFit: 'fill', objectPosition: 'center' }
+        width: 320,
+        height: 220,
+        styles: { borderRadius: '6', marginBottom: '15', objectFit: 'fill' }
       },
       video: {
         type: 'video',
@@ -3428,8 +3435,7 @@ function Builder() {
     if (!type) return;
 
     // Find the inner dropzone to get the correct coordinate origin (the 1200px container)
-    const dropzone = document.querySelector(`[data-section-id="${sectionId}"] .builder-canvas-section-dropzone`)
-      || e.currentTarget.querySelector('.builder-canvas-section-dropzone');
+    const dropzone = e.currentTarget.querySelector('.builder-canvas-section-dropzone');
     const rect = dropzone ? dropzone.getBoundingClientRect() : e.currentTarget.getBoundingClientRect();
     
     // Calculate unscaled coordinates so items drop perfectly under the mouse even when zoomed
@@ -3505,10 +3511,10 @@ function Builder() {
       },
       image: {
         type: 'image',
-        content: { src: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80', alt: 'Visual Graphic' },
-        width: 600,
-        height: 400,
-        styles: { borderRadius: '6', marginBottom: '15', objectFit: 'fill', objectPosition: 'center' }
+        content: { src: '', alt: 'Click to add image' },
+        width: 320,
+        height: 220,
+        styles: { borderRadius: '6', marginBottom: '15', objectFit: 'fill' }
       },
       video: {
         type: 'video',
@@ -3597,6 +3603,13 @@ function Builder() {
 
     updateLayout(nextLayout);
     setSelectedElementId(newEl.id);
+  };
+
+  const handleCanvasDrop = (e) => {
+    e.preventDefault();
+    const targetSection = e.target.closest('.builder-canvas-section');
+    const sectionId = targetSection?.dataset.sectionId || activeLayout[activeLayout.length - 1]?.id;
+    if (sectionId) handleDropElement(e, sectionId);
   };
 
   const handleAddSection = () => {
@@ -3973,21 +3986,6 @@ function Builder() {
     }
     const isInlineEditing = inlineEditingId === el.id;
 
-    const syncImageAspectRatio = (image) => {
-      if (el.type !== 'image') return;
-      const ratio = image.naturalWidth / image.naturalHeight;
-      if (!Number.isFinite(ratio) || ratio <= 0 || Math.abs(Number(el.styles?.imageAspectRatio) - ratio) < 0.001) return;
-      const width = Number(el.width) || image.naturalWidth;
-      const height = Math.max(1, Math.round(width / ratio));
-      const nextLayout = activeLayout.map(section => ({
-        ...section,
-        elements: (section.elements || []).map(element => element.id === el.id
-          ? { ...element, height, styles: { ...element.styles, imageAspectRatio: ratio } }
-          : element)
-      }));
-      updateLayout(nextLayout, false);
-    };
-
     const overlayControls = !isPreview && (
       <div className="element-overlay-controls">
         <button onClick={(e) => { e.stopPropagation(); handleMoveElement(el.id, 'up'); }} title="Move Up"><ArrowUp size={12} /></button>
@@ -4164,7 +4162,6 @@ function Builder() {
           }}
           disableDragging={isPreview}
           enableResizing={!isPreview}
-          lockAspectRatio={el.type === 'image' && el.styles?.aspectRatioLocked === true}
           scale={canvasZoom}
           dragGrid={snapToGrid > 0 ? [snapToGrid, snapToGrid] : [1,1]}
           resizeGrid={snapToGrid > 0 ? [snapToGrid, snapToGrid] : [1,1]}
@@ -4407,6 +4404,22 @@ function Builder() {
       const overlayText = el.styles?.hoverOverlayText || '';
       const overlayIcon = el.styles?.hoverOverlayIcon || 'none';
       const alphaMask = getImageAlphaMask(el.content?.src, el.styles);
+      const handleImageFileChosen = (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (loadEvent) => {
+          const nextLayout = activeLayout.map(section => ({
+            ...section,
+            elements: (section.elements || []).map(element => element.id === el.id
+              ? { ...element, content: { ...element.content, src: loadEvent.target.result, alt: element.content?.alt || file.name } }
+              : element)
+          }));
+          updateLayout(nextLayout);
+        };
+        reader.readAsDataURL(file);
+        event.target.value = '';
+      };
 
       let overlayStyle = {
         position: 'absolute',
@@ -4431,14 +4444,16 @@ function Builder() {
         ...alphaMask
       };
 
-      if (overlayCoverage === 'top-half') { overlayStyle.height = '50%'; }
-      else if (overlayCoverage === 'bottom-half') { overlayStyle.top = '50%'; overlayStyle.height = '50%'; }
-      else if (overlayCoverage === 'left-half') { overlayStyle.width = '50%'; }
-      else if (overlayCoverage === 'right-half') { overlayStyle.left = '50%'; overlayStyle.width = '50%'; }
+      // Keep the overlay in the image's full coordinate space before clipping it.
+      // This is essential for PNG/WebP alpha masks: resizing the overlay itself
+      // would scale the mask differently from the image and create a strange shape.
+      if (overlayCoverage === 'top-half') { overlayStyle.clipPath = 'inset(0 0 50% 0)'; }
+      else if (overlayCoverage === 'bottom-half') { overlayStyle.clipPath = 'inset(50% 0 0 0)'; }
+      else if (overlayCoverage === 'left-half') { overlayStyle.clipPath = 'inset(0 50% 0 0)'; }
+      else if (overlayCoverage === 'right-half') { overlayStyle.clipPath = 'inset(0 0 0 50%)'; }
       else if (overlayCoverage === 'gradient-bottom') {
         overlayStyle.backgroundColor = 'transparent';
-        overlayStyle.background = `linear-gradient(to top, ${overlayColor}, transparent)`;
-        overlayStyle.top = '40%'; overlayStyle.height = '60%';
+        overlayStyle.background = `linear-gradient(to top, ${overlayColor} 0%, ${overlayColor} 60%, transparent 100%)`;
         overlayStyle.alignItems = 'flex-end';
         overlayStyle.justifyContent = 'flex-end';
         overlayStyle.paddingBottom = '15px';
@@ -4446,23 +4461,23 @@ function Builder() {
 
       return wrapWithRnd(
         <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', borderRadius: styles.borderRadius || 'inherit' }}>
-          <img
-            className="image-media"
-            src={el.content?.src || 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80'}
-            alt={el.content?.alt || 'Graphic'}
-            draggable={false}
-            onLoad={(e) => syncImageAspectRatio(e.currentTarget)}
-            style={{
-              width: '100%',
-              height: '100%',
-              display: 'block',
-              objectFit: fit,
-              objectPosition: pos,
-              filter: imgFilter,
-              transition: 'filter 0.3s ease, transform 0.3s ease',
-              ...styles
-            }}
-          />
+          {el.content?.src ? (
+            <img
+              className="image-media"
+              src={el.content.src}
+              alt={el.content?.alt || 'Image'}
+              draggable={false}
+              style={{ width: '100%', height: '100%', display: 'block', objectFit: fit, objectPosition: pos, filter: imgFilter, transition: 'filter 0.3s ease, transform 0.3s ease', ...styles }}
+            />
+          ) : (
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '10px', color: '#64748b', background: 'rgba(148,163,184,.08)', border: '1px dashed rgba(100,116,139,.7)', borderRadius: 'inherit', fontSize: '12px' }}>
+              <label htmlFor={`image-upload-${el.id}`} onClick={(event) => event.stopPropagation()} style={{ width: '44px', height: '44px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', background: 'var(--primary)', boxShadow: '0 4px 12px rgba(99,102,241,.35)' }} title="Upload image">
+                <Plus size={24} />
+              </label>
+              <input id={`image-upload-${el.id}`} type="file" accept="image/*" onChange={handleImageFileChosen} style={{ display: 'none' }} />
+              <span>Click + to upload an image</span>
+            </div>
+          )}
           {hasOverlay && (
             <div className="img-hover-overlay" style={overlayStyle}>
               {overlayIcon === 'zoom-in' && <Maximize2 size={18} />}
@@ -6027,7 +6042,8 @@ function Builder() {
             background: getPageBgColor()
           }}>
             <div style={{
-              width: getPreviewWidth(),
+              width: '100%',
+              maxWidth: getPreviewWidth(),
               margin: '0 auto',
               height: '100%',
               minHeight: '100%',
@@ -6057,6 +6073,8 @@ function Builder() {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleCanvasDrop}
             style={{
               flexGrow: 1,
               padding: '40px',
@@ -6136,7 +6154,12 @@ function Builder() {
 
 
 
-              <div className="builder-canvas-wrapper" style={{ flex: 1, overflowY: 'auto', width: '100%', minHeight: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+              <div
+                className="builder-canvas-wrapper"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.stopPropagation(); handleCanvasDrop(e); }}
+                style={{ flex: 1, overflowY: 'auto', width: '100%', minHeight: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}
+              >
                 {activePage && activeLayout ? (
                   activeLayout.length === 0 ? (
                     <div style={{ padding: '80px 20px', textAlign: 'center', color: '#64748b', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100%' }}>
@@ -6163,7 +6186,8 @@ function Builder() {
                           style={{ position: 'relative', width: '100%', backgroundColor: sectionBg, ...secStyles, overflow: 'visible', display: 'flex', flexDirection: 'column', flexGrow: 1 }} 
                           className="builder-canvas-section"
                           onDragOver={(e) => e.preventDefault()}
-                          onDrop={(e) => { e.preventDefault(); handleDropElement(e, sec.id); }}
+                          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropElement(e, sec.id); }}
+                          data-section-id={sec.id}
                         >
                           {!isPreview && (
                             <button
@@ -6671,13 +6695,13 @@ function Builder() {
                         <div>
                           <label style={{ fontSize: '10px' }}>Object Fit</label>
                           <select
-                            value={selectedElement.styles?.objectFit || 'fill'}
+                            value={selectedElement.styles?.objectFit || 'cover'}
                             onChange={(e) => updateSelectedElement({ styles: { objectFit: e.target.value } })}
                             style={{ fontSize: '11px', padding: '4px' }}
                           >
-                            <option value="fill">Fill frame (No margins)</option>
-                            <option value="contain">Contain (Keep proportions)</option>
-                            <option value="cover">Cover (Crop to fill)</option>
+                            <option value="cover">Cover (Fill)</option>
+                            <option value="contain">Contain (Fit)</option>
+                            <option value="fill">Stretch</option>
                             <option value="none">Original</option>
                             <option value="scale-down">Scale Down</option>
                           </select>
@@ -6697,14 +6721,6 @@ function Builder() {
                           </select>
                         </div>
                       </div>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '10px', cursor: 'pointer', marginBottom: '12px' }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedElement.styles?.aspectRatioLocked === true}
-                          onChange={(e) => updateSelectedElement({ styles: { aspectRatioLocked: e.target.checked } })}
-                        />
-                        Lock proportions while resizing
-                      </label>
 
                       {/* Image CSS Filters */}
                       <h4 style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--primary)', marginBottom: '10px', marginTop: '15px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>

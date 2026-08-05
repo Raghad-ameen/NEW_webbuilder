@@ -196,7 +196,7 @@ def render_compiled_element(el, site_id):
         inner_markup = f'<a href="#" style="text-decoration: inherit; color: inherit; font-size: inherit; font-weight: inherit;">{text}</a>'
         
     elif el_type == 'image':
-        src = content.get('src', 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=600&q=80')
+        src = content.get('src', '')
         alt = content.get('alt', 'Image')
         fit = styles.get('objectFit', 'fill')
         position = styles.get('objectPosition', 'center')
@@ -211,7 +211,8 @@ def render_compiled_element(el, site_id):
         if styles.get('hoverOverlayRespectTransparency', True):
             overlay_style += f'mask-image:url("{src}");-webkit-mask-image:url("{src}");mask-size:{fit};-webkit-mask-size:{fit};mask-position:{position};-webkit-mask-position:{position};mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat;'
         overlay_markup = f'<div class="img-hover-overlay" style="{overlay_style}">{styles.get("hoverOverlayText", "")}</div>' if overlay else ''
-        inner_markup = f'<div class="image-frame"><img class="image-media" src="{src}" alt="{alt}" style="object-fit:{fit};object-position:{position};filter:{image_filter(styles)};" />{overlay_markup}</div>'
+        media_markup = f'<img class="image-media" src="{src}" alt="{alt}" style="object-fit:{fit};object-position:{position};filter:{image_filter(styles)};" />' if src else '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:1px dashed #94a3b8;color:#64748b;font-size:12px;">Add an image</div>'
+        inner_markup = f'<div class="image-frame">{media_markup}{overlay_markup}</div>'
 
     elif el_type == 'site_search':
         placeholder = content.get('placeholder', 'Search this site...')
